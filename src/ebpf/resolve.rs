@@ -158,7 +158,7 @@ fn walk_dir_for_inode(root: &Path, dev: u64, ino: u64) -> Option<PathBuf> {
 // ── Tests ────────────────────────────────────────────────────────
 
 #[cfg(test)]
-    #[allow(clippy::unwrap_used)]
+#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
     use std::io::Write;

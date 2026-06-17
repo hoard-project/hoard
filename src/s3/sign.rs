@@ -264,7 +264,7 @@ pub fn sign_request_headers(
 }
 
 #[cfg(test)]
-    #[allow(clippy::unwrap_used)]
+#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
 

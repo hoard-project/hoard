@@ -99,7 +99,7 @@ fn file_mtime_secs(meta: &std::fs::Metadata) -> i64 {
 }
 
 #[cfg(test)]
-    #[allow(clippy::unwrap_used)]
+#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
     use std::io::Write;

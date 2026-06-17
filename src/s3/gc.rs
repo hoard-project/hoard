@@ -147,7 +147,7 @@ pub async fn gc_cycle(s3: &VerifiedS3Backend, prefix: &str, ttl: Duration) -> Re
 }
 
 #[cfg(test)]
-    #[allow(clippy::unwrap_used)]
+#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
 

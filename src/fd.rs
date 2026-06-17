@@ -90,7 +90,7 @@ pub fn open_file_read(path: &std::path::Path) -> io::Result<FileFd> {
 }
 
 #[cfg(test)]
-    #[allow(clippy::unwrap_used)]
+#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
     use std::io::Write;
