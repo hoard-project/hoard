@@ -7,6 +7,7 @@
 #![deny(unsafe_code)]
 
 use anyhow::Result;
+use digest::KeyInit;
 use hmac::{Hmac, Mac};
 use sha2::{Digest, Sha256};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
