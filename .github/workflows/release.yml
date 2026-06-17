@@ -12,9 +12,22 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  release:
-    name: "build + release"
-    runs-on: ubuntu-22.04
+  # ── Build matrix: x86_64 + aarch64 ────────────────────────
+  build:
+    name: "build (${{ matrix.target }})"
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+            bpf_arch: x86
+            artifact_suffix: linux-amd64
+          - runner: ubuntu-22.04-arm
+            target: aarch64-unknown-linux-gnu
+            bpf_arch: arm64
+            artifact_suffix: linux-arm64
     steps:
       - uses: actions/checkout@v6
 
@@ -33,10 +46,10 @@ jobs:
 
       - name: Strip + compress binary
         run: |
-          cp target/release/hoard target/release/hoard.bin
-          strip target/release/hoard.bin
-          xz -9 -T0 target/release/hoard.bin
-          ls -lh target/release/hoard.bin.xz
+          cp target/release/hoard target/release/hoard-${{ matrix.artifact_suffix }}
+          strip target/release/hoard-${{ matrix.artifact_suffix }}
+          xz -9 -T0 target/release/hoard-${{ matrix.artifact_suffix }}
+          ls -lh target/release/hoard-${{ matrix.artifact_suffix }}.xz
 
       - name: Generate vmlinux.h from runner kernel BTF
         run: |
@@ -45,28 +58,51 @@ jobs:
 
       - name: Compile BPF object
         run: |
-          clang -O2 -g -target bpf -D__TARGET_ARCH_x86 \
+          clang -O2 -g -target bpf -D__TARGET_ARCH_${{ matrix.bpf_arch }} \
             -Wall -Werror \
             -Isrc/bpf \
             -c src/bpf/hoard.bpf.c \
             -o hoard.bpf.o
-          xz -9 -T0 hoard.bpf.o
-          ls -lh hoard.bpf.o.xz
+          cp hoard.bpf.o hoard-bpf-${{ matrix.bpf_arch }}.o
+          xz -9 -T0 hoard-bpf-${{ matrix.bpf_arch }}.o
+          ls -lh hoard-bpf-${{ matrix.bpf_arch }}.o.xz
 
-      - name: Determine tag annotation
+      - name: Upload binary artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: hoard-${{ matrix.artifact_suffix }}
+          path: |
+            target/release/hoard-${{ matrix.artifact_suffix }}.xz
+            hoard-bpf-${{ matrix.bpf_arch }}.o.xz
+
+  # ── Create GitHub Release (aggregates all matrix artifacts) ──
+  release:
+    name: "create release"
+    runs-on: ubuntu-22.04
+    needs: build
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v5
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: List artifacts
+        run: ls -lhR artifacts/
+
+      - name: Determine tag
         id: tag
         run: |
           TAG=${GITHUB_REF#refs/tags/}
           echo "tag=$TAG" >> $GITHUB_OUTPUT
-          echo "version=${TAG#v}" >> $GITHUB_OUTPUT
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           name: "Hoard ${{ steps.tag.outputs.tag }}"
           tag_name: ${{ steps.tag.outputs.tag }}
-          files: |
-            target/release/hoard.bin.xz
-            hoard.bpf.o.xz
+          files: artifacts/*
           generate_release_notes: true
           make_latest: true

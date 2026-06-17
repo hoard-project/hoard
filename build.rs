@@ -27,15 +27,28 @@ fn main() -> io::Result<()> {
     // Only need src/bpf/ for vmlinux.h — no system BPF headers
     let include_paths = ["src/bpf"];
 
+    // Map Rust target_arch → BPF __TARGET_ARCH_* define
+    let bpf_arch = match std::env::var("CARGO_CFG_TARGET_ARCH").as_deref() {
+        Ok("x86_64") => "x86",
+        Ok("aarch64") => "arm64",
+        Ok("riscv64") => "riscv",
+        Ok("powerpc64") | Ok("powerpc64le") => "powerpc",
+        Ok("s390x") => "s390",
+        other => {
+            eprintln!("⚠  unknown target_arch={:?}, falling back to x86", other);
+            "x86"
+        }
+    };
+
     let mut cmd = std::process::Command::new(cc);
     cmd.args([
         "-O2",
         "-g",
         "-target",
         "bpf",
-        "-D__TARGET_ARCH_x86",
         "-Wall",
         "-Werror",
+        &format!("-D__TARGET_ARCH_{bpf_arch}"),
     ]);
     for inc in &include_paths {
         cmd.arg(format!("-I{inc}"));
