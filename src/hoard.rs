@@ -470,16 +470,17 @@ impl HoardReady {
         // Build S3 key: {prefix}/{relative_path}/{file_name}
         let s3_key = {
             let rel = path.strip_prefix(watch_root).unwrap_or(path);
-            let rel_str = rel.to_string_lossy();
-            let rel_parent = std::path::Path::new(&*rel_str)
-                .parent()
-                .and_then(|p| p.to_str())
-                .unwrap_or("");
+            let rel_parent = rel.parent().and_then(|p| p.to_str()).unwrap_or("");
             let prefix_clean = prefix.trim_matches('/');
             if rel_parent.is_empty() {
                 format!("{}/{}", prefix_clean, file_name)
             } else {
-                format!("{}/{}/{}", prefix_clean, rel_parent.trim_matches('/'), file_name)
+                format!(
+                    "{}/{}/{}",
+                    prefix_clean,
+                    rel_parent.trim_matches('/'),
+                    file_name
+                )
             }
         };
 
