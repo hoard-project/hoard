@@ -15,7 +15,7 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  # ── Static checks + test ──────────────────────────────────
+  # ── Static checks + test (x86_64 only, architecture-agnostic) ──
   check:
     name: "fmt / clippy / test"
     runs-on: ubuntu-22.04
@@ -40,10 +40,20 @@ jobs:
       - name: Test
         run: cargo test --all-targets
 
-  # ── Release binary ───────────────────────────────────────
+  # ── Build matrix: x86_64 + aarch64 ────────────────────────
   build:
-    name: "build (release)"
-    runs-on: ubuntu-22.04
+    name: "build (${{ matrix.target }})"
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+            bpf_arch: x86
+          - runner: ubuntu-22.04-arm
+            target: aarch64-unknown-linux-gnu
+            bpf_arch: arm64
     steps:
       - uses: actions/checkout@v6
 
@@ -68,13 +78,21 @@ jobs:
       - name: Upload binary
         uses: actions/upload-artifact@v7
         with:
-          name: hoard-linux-amd64
+          name: hoard-${{ matrix.target }}
           path: target/release/hoard
 
-  # ── BPF object ───────────────────────────────────────────
+  # ── BPF compile matrix: x86_64 + aarch64 ──────────────────
   bpf:
-    name: "bpf compile"
-    runs-on: ubuntu-22.04
+    name: "bpf (${{ matrix.bpf_arch }})"
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-22.04
+            bpf_arch: x86
+          - runner: ubuntu-22.04-arm
+            bpf_arch: arm64
     steps:
       - uses: actions/checkout@v6
 
@@ -90,7 +108,7 @@ jobs:
 
       - name: Compile BPF
         run: |
-          clang -O2 -g -target bpf -D__TARGET_ARCH_x86 \
+          clang -O2 -g -target bpf -D__TARGET_ARCH_${{ matrix.bpf_arch }} \
             -Wall -Werror \
             -Isrc/bpf \
             -c src/bpf/hoard.bpf.c \
@@ -100,5 +118,5 @@ jobs:
       - name: Upload BPF object
         uses: actions/upload-artifact@v7
         with:
-          name: hoard-bpf-o
+          name: hoard-bpf-o-${{ matrix.bpf_arch }}
           path: hoard.bpf.o
