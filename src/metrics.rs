@@ -5,13 +5,19 @@
 
 #![deny(unsafe_code)]
 
-use hyper::service::{make_service_fn, service_fn};
-use hyper::{Body, Method, Request, Response, StatusCode};
+use bytes::Bytes;
+use http_body_util::Full;
+use hyper::body::Incoming;
+use hyper::server::conn::http1;
+use hyper::service::service_fn;
+use hyper::{Method, Request, Response, StatusCode};
+use hyper_util::rt::TokioIo;
 use lazy_static::lazy_static;
 use prometheus::{
     register_counter, register_gauge, register_histogram, Counter, Encoder, Gauge, Histogram,
 };
 use std::convert::Infallible;
+use tokio::net::TcpListener;
 use tokio::sync::mpsc;
 
 // ── Metric definitions ────────────────────────────────────────────
@@ -83,29 +89,29 @@ pub async fn serve_metrics(
     flush_tx: Option<mpsc::UnboundedSender<()>>,
 ) -> anyhow::Result<()> {
     let addr: std::net::SocketAddr = addr.parse()?;
-
-    let make_svc = make_service_fn(move |_conn| {
-        let tx = flush_tx.clone();
-        async move { Ok::<_, Infallible>(service_fn(move |req| metrics_handler(req, tx.clone()))) }
-    });
+    let listener = TcpListener::bind(&addr).await?;
 
     tracing::info!(%addr, "Prometheus metrics server starting");
 
-    // hyper 0.14: Server::bind returns Builder, Builder::serve returns Server
-    let server = hyper::Server::bind(&addr).serve(make_svc);
+    loop {
+        let (stream, _) = listener.accept().await?;
+        let io = TokioIo::new(stream);
+        let tx = flush_tx.clone();
 
-    if let Err(e) = server.await {
-        tracing::error!(%e, "metrics server error");
+        tokio::spawn(async move {
+            let svc = service_fn(move |req| metrics_handler(req, tx.clone()));
+            if let Err(e) = http1::Builder::new().serve_connection(io, svc).await {
+                tracing::error!(%e, "metrics connection error");
+            }
+        });
     }
-
-    Ok(())
 }
 
 /// HTTP handler: GET /metrics → Prometheus text format; GET/POST /flush → trigger drain.
 async fn metrics_handler(
-    req: Request<Body>,
+    req: Request<Incoming>,
     flush_tx: Option<mpsc::UnboundedSender<()>>,
-) -> Result<Response<Body>, Infallible> {
+) -> Result<Response<Full<Bytes>>, Infallible> {
     match (req.method(), req.uri().path()) {
         (&Method::POST, "/flush") | (&Method::GET, "/flush") => {
             if let Some(tx) = &flush_tx {
@@ -113,7 +119,7 @@ async fn metrics_handler(
             }
             Ok(Response::builder()
                 .status(StatusCode::OK)
-                .body(Body::from("flush triggered\n"))
+                .body(Full::new(Bytes::from("flush triggered\n")))
                 .unwrap())
         }
         _ => {
@@ -126,7 +132,7 @@ async fn metrics_handler(
             Ok(Response::builder()
                 .status(200)
                 .header("Content-Type", "text/plain; version=0.0.4")
-                .body(Body::from(buffer))
+                .body(Full::new(Bytes::from(buffer)))
                 .unwrap())
         }
     }
