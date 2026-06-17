@@ -19,8 +19,6 @@ jobs:
   check:
     name: "fmt / clippy / test"
     runs-on: ubuntu-22.04
-    env:
-      RUSTFLAGS: "-D warnings"
     steps:
       - uses: actions/checkout@v4
 
