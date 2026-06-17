@@ -8,7 +8,7 @@ pub mod restore;
 
 use crate::config::{Config, ValidatedConfig};
 use anyhow::Result;
-use clap::Parser;
+use clap::Parser as _;
 
 /// Parse CLI arguments (and optional TOML config) → validated configuration.
 pub fn parse_config() -> Result<ValidatedConfig> {

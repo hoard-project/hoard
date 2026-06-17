@@ -159,7 +159,7 @@ fn format_amz_date(unix_secs: u64) -> String {
 }
 
 fn build_canonical_querystring(params: &[(&str, &str)]) -> String {
-    let mut encoded: Vec<String> = params
+    let encoded: Vec<String> = params
         .iter()
         .map(|(k, v)| format!("{}={}", percent_encode(k), percent_encode(v)))
         .collect();
