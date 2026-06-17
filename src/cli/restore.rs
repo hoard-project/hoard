@@ -12,7 +12,7 @@
 use anyhow::{Context, Result};
 use clap::Parser;
 use serde::Deserialize;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::process::Command;
 
 /// Bulk restore arguments.

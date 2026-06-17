@@ -33,9 +33,10 @@ jobs:
 
       - name: Strip + compress binary
         run: |
-          strip target/release/hoard
-          xz -9 -T0 target/release/hoard
-          ls -lh target/release/hoard.xz
+          cp target/release/hoard target/release/hoard.bin
+          strip target/release/hoard.bin
+          xz -9 -T0 target/release/hoard.bin
+          ls -lh target/release/hoard.bin.xz
 
       - name: Generate vmlinux.h from runner kernel BTF
         run: |
@@ -65,7 +66,7 @@ jobs:
           name: "Hoard ${{ steps.tag.outputs.tag }}"
           tag_name: ${{ steps.tag.outputs.tag }}
           files: |
-            target/release/hoard.xz
+            target/release/hoard.bin.xz
             hoard.bpf.o.xz
           generate_release_notes: true
           make_latest: true
