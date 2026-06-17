@@ -1,16 +1,18 @@
-# Hoard — eBPF + io_uring SQLite backup daemon
+# Hoard — eBPF + io_uring file backup daemon
 
 Zero-copy file change replication to S3. Hooked at the VFS layer, no
-application changes needed.
+application changes needed. Watches any file type; auto-detects SQLite
+for WAL checkpoint.
 
 ```mermaid
 flowchart LR
     A[write] --> B[eBPF fentry]
     B --> C[RingBuffer]
-    C --> D[inode→path]
-    D --> E[WAL checkpoint]
-    E --> F[sendfile]
-    F --> G[S3]
+    C --> D[inode to path]
+    D --> E[filter + debounce]
+    E --> F[WAL ckpt?]
+    F --> G[sendfile]
+    G --> H[S3]
 ```
 
 ## Design
@@ -18,7 +20,10 @@ flowchart LR
 - **VFS hook**: BPF `fentry/vfs_write` — catches every `write(2)` regardless of
   filesystem (ext4, tmpfs, btrfs, …)
 - **Zero-copy upload**: `sendfile(2)` from page cache straight to TLS socket
-- **SQLite-aware**: WAL checkpoint before upload ensures crash-safe snapshot
+- **SQLite auto-detect**: WAL checkpoint (TRUNCATE→PASSIVE backoff) for `.db`
+  files; transparent pass-through for logs, JSON, or any regular file
+- **S3 key preserves directory structure**: `{prefix}/{relpath}/{filename}`
+  mirrors the local filesystem layout
 - **BTF CO-RE**: One BPF object, any kernel ≥ 5.5
 - **Dual-mode**: standalone (control socket) or Nomad system job (SSE lifecycle)
 
@@ -61,7 +66,8 @@ interval_secs = 21600
 ttl_days      = 30
 
 [filter]
-extensions = ["db", "sqlite", "sqlite3"]
+# Watch any file type: SQLite, logs, JSON, CSV, parquet…
+extensions = ["db", "sqlite", "sqlite3", "log", "json", "csv", "parquet"]
 exclude    = ["*.tmp", "*.journal"]
 ```
 
@@ -78,8 +84,8 @@ exclude    = ["*.tmp", "*.journal"]
 
 ```
 ┌─────────────┐    ┌──────────────┐    ┌───────────┐
-│  sqlite3    │───▶│  BPF fentry  │───▶│ RingBuf   │
-│  write(2)   │    │  vfs_write   │    │  (shared) │
+│  app write  │───▶│  BPF fentry  │───▶│ RingBuf   │
+│  (any file) │    │  vfs_write   │    │  (shared) │
 └─────────────┘    └──────────────┘    └─────┬─────┘
                                              │
                                       ┌──────▼──────┐
@@ -97,7 +103,8 @@ exclude    = ["*.tmp", "*.journal"]
                    └────────────────────────┼────────────────────┘
                                             ▼
                                      ┌──────────────┐
-                                     │ WAL checkpoint│
+                                     │ (or skip for  │
+              │ non-SQLite)   │
                                      └──────┬───────┘
                                             ▼
                                      ┌──────────────┐

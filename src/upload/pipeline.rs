@@ -62,33 +62,41 @@ impl UploadPipeline<Pending> {
     }
 
     /// Perform WAL checkpoint with exponential backoff + PASSIVE fallback (§五.2).
+    ///
+    /// If the file is not a SQLite database, the checkpoint is silently skipped
+    /// and the pipeline proceeds directly to the presign stage. This allows Hoard
+    /// to back up any file type, not just SQLite databases.
     pub fn wal_checkpoint(self) -> Result<UploadPipeline<Checkpointed>> {
-        let conn = rusqlite::Connection::open(&self.db_path).with_context(|| {
-            format!(
-                "failed to open db for checkpoint: {}",
-                self.db_path.display()
-            )
-        })?;
-
-        // Stage 1: TRUNCATE with exponential backoff (5 attempts)
-        for attempt in 0..5 {
-            match conn.execute_batch("PRAGMA wal_checkpoint(TRUNCATE);") {
-                Ok(_) => {
-                    tracing::info!(attempt, "WAL checkpoint TRUNCATE succeeded");
-                    break;
+        // Open the file as SQLite; if it's not a valid database, skip checkpoint.
+        match rusqlite::Connection::open(&self.db_path) {
+            Ok(conn) => {
+                // Stage 1: TRUNCATE with exponential backoff (5 attempts)
+                for attempt in 0..5 {
+                    match conn.execute_batch("PRAGMA wal_checkpoint(TRUNCATE);") {
+                        Ok(_) => {
+                            tracing::info!(attempt, "WAL checkpoint TRUNCATE succeeded");
+                            break;
+                        }
+                        Err(ref e) if is_busy(e) => {
+                            let wait_ms = 100 * 2u64.pow(attempt);
+                            tracing::warn!(attempt, wait_ms, "checkpoint BUSY, retrying");
+                            std::thread::sleep(std::time::Duration::from_millis(wait_ms));
+                            continue;
+                        }
+                        Err(e) => {
+                            tracing::warn!(?e, "TRUNCATE failed, falling back to PASSIVE checkpoint");
+                            conn.execute_batch("PRAGMA wal_checkpoint(PASSIVE);")
+                                .context("PASSIVE checkpoint also failed")?;
+                            break;
+                        }
+                    }
                 }
-                Err(ref e) if is_busy(e) => {
-                    let wait_ms = 100 * 2u64.pow(attempt);
-                    tracing::warn!(attempt, wait_ms, "checkpoint BUSY, retrying");
-                    std::thread::sleep(std::time::Duration::from_millis(wait_ms));
-                    continue;
-                }
-                Err(e) => {
-                    tracing::warn!(?e, "TRUNCATE failed, falling back to PASSIVE checkpoint");
-                    conn.execute_batch("PRAGMA wal_checkpoint(PASSIVE);")
-                        .context("PASSIVE checkpoint also failed")?;
-                    break;
-                }
+            }
+            Err(_) => {
+                tracing::debug!(
+                    path = %self.db_path.display(),
+                    "not a SQLite database, skipping WAL checkpoint"
+                );
             }
         }
 
