@@ -42,7 +42,7 @@ fn main() -> io::Result<()> {
     for inc in &include_paths {
         cmd.arg(format!("-I{inc}"));
     }
-    cmd.args(["-c", bpf_target, "-o", Path::new(&bpf_out)]);
+    cmd.args(["-c", bpf_target, "-o", bpf_out.as_str()]);
 
     let output = cmd.output()?;
 
