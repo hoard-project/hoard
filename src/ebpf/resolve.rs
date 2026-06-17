@@ -229,7 +229,6 @@ mod tests {
     }
 
     #[tokio::test]
-    #[tokio::test]
     #[ignore = "dev_t encoding varies across kernel versions"]
     async fn cache_invalidation() {
         let dir = TempDir::new().unwrap();
