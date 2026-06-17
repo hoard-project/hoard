@@ -20,7 +20,7 @@ jobs:
     name: "fmt / clippy / test"
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Install system dependencies
         run: |
@@ -45,7 +45,7 @@ jobs:
     name: "build (release)"
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Install system dependencies
         run: |
@@ -76,7 +76,7 @@ jobs:
     name: "bpf compile"
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Install clang + bpftool
         run: |
