@@ -1,0 +1,48 @@
+# Hoard systemd template unit
+# Usage: systemctl enable --now hoard@myapp
+#
+# Requires: hoard binary at /usr/local/bin/hoard
+#           hoardctl at /usr/local/bin/hoardctl
+
+[Unit]
+Description=Hoard backup daemon for %i
+Documentation=https://github.com/k3s-forge/nomad-gitops
+After=network-online.target
+BindsTo=%i.service
+Wants=network-online.target
+
+[Service]
+Type=notify
+ExecStart=/usr/local/bin/hoard \
+  --mode standalone \
+  --service %i \
+  --watch-path /var/lib/%i/data \
+  --watch-patterns "*.db,*.db-wal,*.db-shm" \
+  --tls-mode ktls \
+  --s3-endpoint ${HOARD_S3_ENDPOINT} \
+  --s3-region ${HOARD_S3_REGION} \
+  --s3-bucket ${HOARD_S3_BUCKET} \
+  --s3-access-key ${HOARD_S3_ACCESS_KEY} \
+  --s3-secret-key ${HOARD_S3_SECRET_KEY} \
+  --s3-prefix backup/%i
+
+ExecStop=/usr/local/bin/hoardctl flush %i
+KillSignal=SIGINT
+TimeoutStopSec=30
+
+# Security hardening
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/var/lib/%i/data /run/hoard
+PrivateTmp=yes
+PrivateDevices=no         # eBPF needs /sys/kernel access
+ProtectKernelTunables=no  # BPF loading needs kernel access
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+
+# Resource limits
+MemoryMax=10M
+CPUQuota=5%
+
+[Install]
+WantedBy=multi-user.target

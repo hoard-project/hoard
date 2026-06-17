@@ -1,0 +1,19 @@
+/target/
+**/*.rs.bk
+*.pdb
+*.bpf.o
+.env
+*.swp
+*.swo
+.vscode/
+.idea/
+
+# Never commit real credentials — these files contain placeholders only
+# nomad/hoard-system.nomad is the production template
+# Use env vars or Nomad variables for secrets
+*.nomad
+!contrib/nomad/*.nomad
+hoard.toml
+stress_test.sh
+test_*.py
+HOARD_V2_PLAN.md

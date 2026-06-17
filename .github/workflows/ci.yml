@@ -1,0 +1,102 @@
+name: Verify & Build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: write
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: "-D warnings"
+
+jobs:
+  # ── Static checks + test ──────────────────────────────────
+  check:
+    name: "fmt / clippy / test"
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libssl-dev libelf-dev clang llvm
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Check formatting
+        run: cargo fmt --check
+
+      - name: Clippy
+        run: cargo clippy --all-targets --no-deps
+
+      - name: Test
+        run: cargo test --all-targets
+
+  # ── Release binary ───────────────────────────────────────
+  build:
+    name: "build (release)"
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libssl-dev libelf-dev clang llvm
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Build release
+        run: cargo build --release
+
+      - name: Binary info
+        run: |
+          ls -lh target/release/hoard
+          file target/release/hoard
+
+      - name: Upload binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: hoard-linux-amd64
+          path: target/release/hoard
+
+  # ── BPF object ───────────────────────────────────────────
+  bpf:
+    name: "bpf compile"
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install clang + bpftool
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang llvm linux-tools-common linux-tools-generic
+
+      - name: Generate vmlinux.h (from runner kernel BTF)
+        run: |
+          bpftool btf dump file /sys/kernel/btf/vmlinux format c > src/bpf/vmlinux.h 2>/dev/null || \
+            echo "⚠ bpftool failed, using committed vmlinux.h"
+
+      - name: Compile BPF
+        run: |
+          clang -O2 -g -target bpf -D__TARGET_ARCH_x86 \
+            -Wall -Werror \
+            -Isrc/bpf \
+            -c src/bpf/hoard.bpf.c \
+            -o hoard.bpf.o
+          ls -lh hoard.bpf.o
+
+      - name: Upload BPF object
+        uses: actions/upload-artifact@v4
+        with:
+          name: hoard-bpf-o
+          path: hoard.bpf.o

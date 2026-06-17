@@ -1,0 +1,37 @@
+[Unit]
+Description=Hoard eBPF SQLite Backup Daemon
+Documentation=https://github.com/k3s-forge/nomad-gitops
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=notify
+ExecStart=/usr/local/bin/hoard --config /etc/hoard/config.toml
+ExecReload=/bin/kill -HUP $MAINPID
+Restart=always
+RestartSec=10
+
+# Security hardening
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/opt/hoard-watch /var/lib/hoard
+PrivateTmp=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+MemoryDenyWriteExecute=yes
+RestrictRealtime=yes
+RestrictNamespaces=yes
+LockPersonality=yes
+
+# BPF needs these
+CapabilityBoundingSet=CAP_BPF CAP_SYS_ADMIN CAP_NET_RAW
+AmbientCapabilities=CAP_BPF CAP_SYS_ADMIN CAP_NET_RAW
+
+# Resource limits
+LimitNOFILE=65536
+LimitMEMLOCK=infinity
+
+[Install]
+WantedBy=multi-user.target
