@@ -1,11 +1,15 @@
 # cargo-deny configuration for Hoard
-# https://embarkstudios.github.io/cargo-deny/
+# https://embarkstudios.github.io/cargo-deny/ (cargo-deny >= 0.19)
+
+[graph]
+targets = []
+all-features = false
+exclude = []
+
+[output]
+feature-depth = 1
 
 [advisories]
-vulnerability = "deny"
-unmaintained = "none"
-yanked = "deny"
-notice = "warn"
 ignore = []
 
 [licenses]
