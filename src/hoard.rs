@@ -267,7 +267,7 @@ impl HoardReady {
                                 files
                             };
                             for path in &to_upload {
-                                Self::upload_file(&s3, path, &s3_prefix).await;
+                                Self::upload_file(&s3, path, &watch_root, &s3_prefix).await;
                             }
                             tracing::info!(count = to_upload.len(), "drain complete");
                         }
@@ -287,7 +287,7 @@ impl HoardReady {
                         files
                     };
                     for path in &to_upload {
-                        Self::upload_file(&s3, path, &s3_prefix).await;
+                        Self::upload_file(&s3, path, &watch_root, &s3_prefix).await;
                     }
                     tracing::info!(count = to_upload.len(), "flush drain complete");
                 }
@@ -322,7 +322,7 @@ impl HoardReady {
                         files
                     };
                     for path in &to_upload {
-                        Self::upload_file(&s3, path, &s3_prefix).await;
+                        Self::upload_file(&s3, path, &watch_root, &s3_prefix).await;
                     }
                     if !to_upload.is_empty() {
                         tracing::info!(count = to_upload.len(), "periodic drain complete");
@@ -338,7 +338,7 @@ impl HoardReady {
                         files
                     };
                     for path in &to_upload {
-                        Self::upload_file(&s3, path, &s3_prefix).await;
+                        Self::upload_file(&s3, path, &watch_root, &s3_prefix).await;
                     }
                     tracing::warn!(count = to_upload.len(), "SIGTERM drain complete, exiting");
                     break;
@@ -352,7 +352,7 @@ impl HoardReady {
                         files
                     };
                     for path in &to_upload {
-                        Self::upload_file(&s3, path, &s3_prefix).await;
+                        Self::upload_file(&s3, path, &watch_root, &s3_prefix).await;
                     }
                     tracing::warn!(count = to_upload.len(), "SIGINT drain complete, exiting");
                     break;
@@ -450,7 +450,15 @@ impl HoardReady {
     }
 
     /// Upload a single file through the full pipeline.
-    async fn upload_file(_s3: &VerifiedS3Backend, path: &std::path::Path, _prefix: &str) {
+    ///
+    /// The S3 object key is built as `{prefix}/{relative_path}/{file_name}`
+    /// where `relative_path` is `path` stripped of `watch_root`.
+    async fn upload_file(
+        _s3: &VerifiedS3Backend,
+        path: &std::path::Path,
+        watch_root: &std::path::Path,
+        prefix: &str,
+    ) {
         #[cfg(feature = "prometheus")]
         crate::metrics::UPLOAD_TOTAL.inc();
 
@@ -458,6 +466,22 @@ impl HoardReady {
             .file_name()
             .and_then(|n| n.to_str())
             .unwrap_or("unknown.db");
+
+        // Build S3 key: {prefix}/{relative_path}/{file_name}
+        let s3_key = {
+            let rel = path.strip_prefix(watch_root).unwrap_or(path);
+            let rel_str = rel.to_string_lossy();
+            let rel_parent = std::path::Path::new(&*rel_str)
+                .parent()
+                .and_then(|p| p.to_str())
+                .unwrap_or("");
+            let prefix_clean = prefix.trim_matches('/');
+            if rel_parent.is_empty() {
+                format!("{}/{}", prefix_clean, file_name)
+            } else {
+                format!("{}/{}/{}", prefix_clean, rel_parent.trim_matches('/'), file_name)
+            }
+        };
 
         // Open and stat the file
         let std_file = match std::fs::File::open(path) {
@@ -480,9 +504,8 @@ impl HoardReady {
         };
 
         let file_fd = crate::fd::FileFd::from_file(std_file);
-        let s3_key = format!("{file_name}");
 
-        // Stage 1: WAL checkpoint (sync, blocks briefly)
+        // Stage 1: WAL checkpoint (sync, blocks briefly; nop for non-SQLite)
         let checkpointed = match crate::upload::pipeline::UploadPipeline::new(
             file_fd,
             file_size,
