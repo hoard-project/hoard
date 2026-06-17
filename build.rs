@@ -51,8 +51,8 @@ fn main() -> io::Result<()> {
         "bpf",
         "-Wall",
         "-Werror",
+        &format!("-D__TARGET_ARCH_{bpf_arch}"),
     ]);
-    cmd.arg(format!("-D__TARGET_ARCH_{bpf_arch}"));
     for inc in &include_paths {
         cmd.arg(format!("-I{inc}"));
     }
