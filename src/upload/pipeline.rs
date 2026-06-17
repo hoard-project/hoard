@@ -84,7 +84,10 @@ impl UploadPipeline<Pending> {
                             continue;
                         }
                         Err(e) => {
-                            tracing::warn!(?e, "TRUNCATE failed, falling back to PASSIVE checkpoint");
+                            tracing::warn!(
+                                ?e,
+                                "TRUNCATE failed, falling back to PASSIVE checkpoint"
+                            );
                             conn.execute_batch("PRAGMA wal_checkpoint(PASSIVE);")
                                 .context("PASSIVE checkpoint also failed")?;
                             break;
