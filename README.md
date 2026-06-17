@@ -5,11 +5,11 @@ application changes needed.
 
 ```mermaid
 flowchart LR
-    A[write(2)] --> B[eBPF fentry]
+    A["write(2)"] --> B[eBPF fentry]
     B --> C[RingBuffer]
-    C --> D[inode → path]
+    C --> D["inode → path"]
     D --> E[WAL checkpoint]
-    E --> F[sendfile(2)]
+    E --> F["sendfile(2)"]
     F --> G[S3 PUT]
 ```
 
