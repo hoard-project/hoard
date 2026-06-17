@@ -7,6 +7,7 @@
 *.swo
 .vscode/
 .idea/
+Cargo.lock
 
 # Never commit real credentials — these files contain placeholders only
 # nomad/hoard-system.nomad is the production template
