@@ -21,32 +21,32 @@ lazy_static! {
     pub static ref UPLOAD_TOTAL: Counter = register_counter!(
         "hoard_upload_total",
         "Total number of uploads attempted"
-    ).unwrap();
+    ).expect("duplicate metric: hoard_upload_total");
 
     /// Total bytes uploaded.
     pub static ref UPLOAD_BYTES_TOTAL: Counter = register_counter!(
         "hoard_upload_bytes_total",
         "Total bytes uploaded"
-    ).unwrap();
+    ).expect("duplicate metric: hoard_upload_bytes_total");
 
     /// Number of uploads currently in flight.
     pub static ref UPLOAD_IN_FLIGHT: Gauge = register_gauge!(
         "hoard_upload_in_flight",
         "Uploads currently in progress"
-    ).unwrap();
+    ).expect("duplicate metric: hoard_upload_in_flight");
 
     /// Duration of uploads (histogram).
     pub static ref UPLOAD_DURATION_SECONDS: Histogram = register_histogram!(
         "hoard_upload_duration_seconds",
         "Upload duration histogram",
         vec![0.01, 0.05, 0.1, 0.5, 1.0, 5.0, 10.0, 30.0, 60.0]
-    ).unwrap();
+    ).expect("duplicate metric: hoard_upload_duration_seconds");
 
     /// Total GC cycles completed.
     pub static ref GC_CYCLES_TOTAL: Counter = register_counter!(
         "hoard_gc_cycles_total",
         "Total number of GC cycles completed"
-    ).unwrap();
+    ).expect("duplicate metric: hoard_gc_cycles_total");
 
     /// Total objects deleted by GC.
     pub static ref GC_DELETED_TOTAL: Counter = register_counter!(

@@ -105,9 +105,10 @@ pub fn resolve_inode(watch_root: &Path, dev: u64, ino: u64) -> Option<PathBuf> {
 }
 
 /// Convert userspace dev_t encoding (major<<8 | minor) to kernel encoding
-/// (major<<20 | minor). Rust MetadataExt::dev() returns the old 16-bit
-/// encoding; the kernel uses the 32-bit encoding introduced with extended
-/// dev_t. This conversion is needed to match BPF s_dev values.
+/// (major<<20 | minor). Rust MetadataExt::dev() may return either format
+/// depending on glibc version and statx(2) availability.  This function
+/// normalises the old 16-bit encoding to the 32-bit kernel format used by
+/// BPF `s_dev` values.
 fn user_dev_to_kernel_dev(user_dev: u64) -> u64 {
     let major = (user_dev >> 8) & 0xfff;
     let minor = user_dev & 0xff;
@@ -115,6 +116,10 @@ fn user_dev_to_kernel_dev(user_dev: u64) -> u64 {
 }
 
 /// Walk a directory tree looking for a file with the given inode.
+///
+/// `dev` is expected in kernel encoding (major<<20 | minor), as produced
+/// by BPF.  The walk tries *both* raw and converted userspace dev_t to
+/// handle the glibc encoding ambiguity transparently.
 fn walk_dir_for_inode(root: &Path, dev: u64, ino: u64) -> Option<PathBuf> {
     let mut dirs = vec![root.to_path_buf()];
 
@@ -131,8 +136,12 @@ fn walk_dir_for_inode(root: &Path, dev: u64, ino: u64) -> Option<PathBuf> {
                 Err(_) => continue,
             };
 
-            // Check inode match — convert userspace dev to kernel encoding
-            if meta.ino() == ino && user_dev_to_kernel_dev(meta.dev()) == dev {
+            // Check inode + dev match.  Try raw userspace dev_t first
+            // (statx on glibc ≥ 2.28), then fall back to the converted
+            // old-style encoding.  This makes the walk work regardless of
+            // which encoding the local C library uses.
+            let raw_dev = meta.dev();
+            if meta.ino() == ino && (raw_dev == dev || user_dev_to_kernel_dev(raw_dev) == dev) {
                 return Some(path);
             }
 
@@ -149,13 +158,13 @@ fn walk_dir_for_inode(root: &Path, dev: u64, ino: u64) -> Option<PathBuf> {
 // ── Tests ────────────────────────────────────────────────────────
 
 #[cfg(test)]
+    #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
     use std::io::Write;
     use tempfile::TempDir;
 
     #[test]
-    #[ignore = "dev_t encoding varies across kernel versions"]
     fn resolve_existing_file() {
         let dir = TempDir::new().unwrap();
         let file_path = dir.path().join("test.db");
@@ -179,7 +188,6 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore = "dev_t encoding varies across kernel versions"]
     async fn cache_hit() {
         let dir = TempDir::new().unwrap();
         let file_path = dir.path().join("cache-test.db");
@@ -205,7 +213,6 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore = "dev_t encoding varies across kernel versions"]
     async fn cache_miss_deleted_file() {
         let dir = TempDir::new().unwrap();
         let file_path = dir.path().join("temp.db");
@@ -229,7 +236,6 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore = "dev_t encoding varies across kernel versions"]
     async fn cache_invalidation() {
         let dir = TempDir::new().unwrap();
         let file_path = dir.path().join("inv.db");

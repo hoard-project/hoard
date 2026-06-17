@@ -279,6 +279,7 @@ pub fn enable_ktls(sock_fd: RawFd, cipher: TlsCipher, keys: &TlsKeys) -> io::Res
 }
 
 #[cfg(test)]
+    #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
     use std::fs::File;

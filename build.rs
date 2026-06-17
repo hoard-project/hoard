@@ -3,8 +3,6 @@
 //! Requires `clang` and `libbpf-dev` for full functionality.
 //! Builds without BPF if clang is not available.
 
-#![allow(clippy::needless_borrows_for_generic_args)]
-
 use std::{io, path::Path};
 
 fn main() -> io::Result<()> {
@@ -42,7 +40,9 @@ fn main() -> io::Result<()> {
     for inc in &include_paths {
         cmd.arg(format!("-I{inc}"));
     }
-    cmd.args(["-c", bpf_target, "-o", bpf_out.as_str()]);
+    // Use separate arg() to avoid type-uniformity issues in array literal
+    cmd.args(["-c", bpf_target]);
+    cmd.arg("-o").arg(Path::new(&bpf_out));
 
     let output = cmd.output()?;
 

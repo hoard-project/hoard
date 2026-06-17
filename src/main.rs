@@ -19,10 +19,10 @@
 
 #![deny(unsafe_code)]
 #![deny(missing_docs)]
-#![warn(clippy::must_use_candidate)]
-#![warn(clippy::unwrap_used)]
-#![warn(clippy::cast_possible_truncation)]
-#![warn(clippy::cast_sign_loss)]
+#![deny(clippy::must_use_candidate)]
+#![deny(clippy::unwrap_used)]
+#![deny(clippy::cast_possible_truncation)]
+#![deny(clippy::cast_sign_loss)]
 
 mod cli;
 mod config;
