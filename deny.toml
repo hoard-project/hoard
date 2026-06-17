@@ -9,7 +9,6 @@ notice = "warn"
 ignore = []
 
 [licenses]
-# Hoard is GPL-3.0. Allow common FOSS licenses in dependencies.
 allow = [
     "MIT",
     "Apache-2.0",
@@ -22,10 +21,8 @@ allow = [
     "MPL-2.0",
     "CC0-1.0",
 ]
-copyleft = "deny"
 confidence-threshold = 0.8
 exceptions = [
-    # rusqlite bundles SQLite which is public domain
     { name = "libsqlite3-sys", allow = ["Unlicense"] },
 ]
 
