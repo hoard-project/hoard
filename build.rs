@@ -35,10 +35,7 @@ fn main() -> io::Result<()> {
         Ok("powerpc64") | Ok("powerpc64le") => "powerpc",
         Ok("s390x") => "s390",
         other => {
-            eprintln!(
-                "⚠  unknown target_arch={:?}, falling back to x86",
-                other
-            );
+            eprintln!("⚠  unknown target_arch={:?}, falling back to x86", other);
             "x86"
         }
     };
