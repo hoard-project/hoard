@@ -11,7 +11,7 @@ aya-log                = "0.2"
 tokio                  = { version = "1", features = ["full"] }
 tokio-util             = { version = "0.7", features = ["io"] }
 reqwest                = { version = "0.13", default-features = false, features = ["native-tls", "stream"] }
-hmac                   = "0.12"
+hmac                   = "0.13"
 sha2                   = "0.10"
 hex                    = "0.4"
 zstd                   = { version = "0.13", default-features = false }
