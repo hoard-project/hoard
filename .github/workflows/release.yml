@@ -1,0 +1,71 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  release:
+    name: "build + release"
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libssl-dev libelf-dev clang llvm linux-tools-common linux-tools-generic
+
+      - name: Install Rust
+        run: |
+          curl --proto '=https' --tlsv1.2 --retry 10 --retry-connrefused -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable --profile minimal
+          echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+
+      - name: Build release binary
+        run: cargo build --release
+
+      - name: Strip + compress binary
+        run: |
+          strip target/release/hoard
+          xz -9 -T0 target/release/hoard
+          ls -lh target/release/hoard.xz
+
+      - name: Generate vmlinux.h from runner kernel BTF
+        run: |
+          bpftool btf dump file /sys/kernel/btf/vmlinux format c > src/bpf/vmlinux.h 2>/dev/null || \
+            echo "⚠ bpftool failed, using committed vmlinux.h"
+
+      - name: Compile BPF object
+        run: |
+          clang -O2 -g -target bpf -D__TARGET_ARCH_x86 \
+            -Wall -Werror \
+            -Isrc/bpf \
+            -c src/bpf/hoard.bpf.c \
+            -o hoard.bpf.o
+          xz -9 -T0 hoard.bpf.o
+          ls -lh hoard.bpf.o.xz
+
+      - name: Determine tag annotation
+        id: tag
+        run: |
+          TAG=${GITHUB_REF#refs/tags/}
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
+          echo "version=${TAG#v}" >> $GITHUB_OUTPUT
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: "Hoard ${{ steps.tag.outputs.tag }}"
+          tag_name: ${{ steps.tag.outputs.tag }}
+          files: |
+            target/release/hoard.xz
+            hoard.bpf.o.xz
+          generate_release_notes: true
+          make_latest: true
