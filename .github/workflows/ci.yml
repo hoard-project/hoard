@@ -54,6 +54,8 @@ jobs:
           sudo apt-get install -y libssl-dev libelf-dev clang llvm
 
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
 
       - name: Build release
         run: cargo build --release

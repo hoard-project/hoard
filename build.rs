@@ -17,7 +17,7 @@ fn main() -> io::Result<()> {
             eprintln!("⚠  clang not found — BPF programs will not be compiled");
             eprintln!("   Install: apt install clang llvm libbpf-dev");
             // Write a stub so the build doesn't fail
-            std::fs::write(&bpf_out, &[])?;
+            std::fs::write(bpf_out.as_str(), &[])?;
             println!("cargo:rustc-env=HOARD_BPF_OBJECT={bpf_out}");
             println!("cargo:rerun-if-changed={bpf_target}");
             return Ok(());
@@ -40,7 +40,7 @@ fn main() -> io::Result<()> {
     for inc in &include_paths {
         cmd.arg(format!("-I{inc}"));
     }
-    cmd.args(["-c", bpf_target, "-o", &bpf_out]);
+    cmd.args(["-c", bpf_target, "-o", bpf_out.as_str()]);
 
     let output = cmd.output()?;
 
@@ -50,18 +50,18 @@ fn main() -> io::Result<()> {
         for line in stderr.lines().take(10) {
             eprintln!("   {}", line);
         }
-        std::fs::write(&bpf_out, &[])?;
+        std::fs::write(bpf_out.as_str(), &[])?;
     }
 
     // Copy compiled BPF object to the standard runtime location.
     // The daemon looks for /usr/lib/hoard/hoard.bpf.o at startup.
     // We also embed the build-directory path for development convenience.
     let install_dest = "/usr/lib/hoard/hoard.bpf.o";
-    if output.status.success() && std::fs::metadata(&bpf_out).map(|m| m.len()).unwrap_or(0) > 0 {
+    if output.status.success() && std::fs::metadata(bpf_out.as_str()).map(|m| m.len()).unwrap_or(0) > 0 {
         if let Some(parent) = std::path::Path::new(install_dest).parent() {
             let _ = std::fs::create_dir_all(parent);
         }
-        match std::fs::copy(&bpf_out, install_dest) {
+        match std::fs::copy(bpf_out.as_str(), install_dest) {
             Ok(_) => eprintln!("✓ BPF object installed: {install_dest}"),
             Err(e) => eprintln!("⚠  Cannot install BPF object to {install_dest}: {e}"),
         }
