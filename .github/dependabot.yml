@@ -22,8 +22,11 @@ updates:
         update-types:
           - "patch"
     ignore:
-      # Pinned: aya 0.14 has API changes, review manually
+      # Major bumps → review manually (API changes expected)
       - dependency-name: "aya"
+        update-types: ["version-update:semver-major"]
+      # hmac 0.13 requires digest 0.11, incompatible with sha2 0.10
+      - dependency-name: "hmac"
         update-types: ["version-update:semver-major"]
 
   - package-ecosystem: "github-actions"
