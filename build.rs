@@ -57,7 +57,12 @@ fn main() -> io::Result<()> {
     // The daemon looks for /usr/lib/hoard/hoard.bpf.o at startup.
     // We also embed the build-directory path for development convenience.
     let install_dest = "/usr/lib/hoard/hoard.bpf.o";
-    if output.status.success() && std::fs::metadata(bpf_out.as_str()).map(|m| m.len()).unwrap_or(0) > 0 {
+    if output.status.success()
+        && std::fs::metadata(bpf_out.as_str())
+            .map(|m| m.len())
+            .unwrap_or(0)
+            > 0
+    {
         if let Some(parent) = std::path::Path::new(install_dest).parent() {
             let _ = std::fs::create_dir_all(parent);
         }

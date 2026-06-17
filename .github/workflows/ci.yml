@@ -53,9 +53,10 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libssl-dev libelf-dev clang llvm
 
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          toolchain: stable
+      - name: Install Rust
+        run: |
+          curl --proto '=https' --tlsv1.2 --retry 10 --retry-connrefused -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable --profile minimal
+          echo "$HOME/.cargo/bin" >> $GITHUB_PATH
 
       - name: Build release
         run: cargo build --release
