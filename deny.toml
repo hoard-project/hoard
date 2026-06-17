@@ -3,7 +3,7 @@
 
 [advisories]
 vulnerability = "deny"
-unmaintained = "warn"
+unmaintained = "none"
 yanked = "deny"
 notice = "warn"
 ignore = []
@@ -27,7 +27,7 @@ exceptions = [
 ]
 
 [bans]
-multiple-versions = "all"
+multiple-versions = "warn"
 deny = []
 skip = []
 skip-tree = []
