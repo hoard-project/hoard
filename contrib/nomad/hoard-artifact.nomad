@@ -7,6 +7,7 @@
 //   - Linux kernel ≥ 5.5
 //   - Nomad cluster with internet egress (github.com)
 //   - xz utility on host (for decompression)
+//   - raw_exec driver enabled in client config
 //
 // Deploy:
 //   nomad run hoard-artifact.nomad
@@ -42,13 +43,12 @@ job "hoard" {
   priority    = 90
 
   constraint {
-    attribute = "${os.kernel.name}"
+    attribute = "${attr.kernel.name}"
     value     = "linux"
   }
 
-  // BPF requires kernel ≥ 5.5
   constraint {
-    attribute = "${kernel.version}"
+    attribute = "${attr.kernel.version}"
     operator  = "semver"
     value     = ">= 5.5.0"
   }
@@ -56,15 +56,9 @@ job "hoard" {
   group "hoard" {
     stop_after_client_disconnect = "30s"
 
-    network {
-      port "metrics" {
-        static = 9150
-      }
-    }
-
-    // ── Pre-start: download & install binary + BPF object ──
+    # ── Pre-start: download & install binary + BPF object ──
     task "install" {
-      driver = "exec"
+      driver = "raw_exec"
       lifecycle {
         hook    = "prestart"
         sidecar = false
@@ -106,23 +100,20 @@ job "hoard" {
       }
     }
 
-    // ── Main daemon ──
+    # ── Main daemon ──
     task "hoard" {
-      driver = "exec"
+      driver = "raw_exec"
 
       config {
         command = "/usr/local/bin/hoard"
-        args = [
-          "--config", "local/hoard.toml",
-        ]
+        args    = ["--config", "local/hoard.toml"]
       }
 
       template {
-        data        = <<EOF
+        data = <<EOF
 [daemon]
 mode        = "standalone"
 service     = "{{ env "NOMAD_ALLOC_NAME" }}"
-metrics_addr = "0.0.0.0:9150"
 
 [watch]
 path = "/var/lib/hoard/volumes"
@@ -165,10 +156,10 @@ EOF
       kill_timeout = "30s"
 
       restart_policy {
-        interval  = "5m"
-        attempts  = 3
-        delay     = "15s"
-        mode      = "delay"
+        interval = "5m"
+        attempts = 3
+        delay    = "15s"
+        mode     = "delay"
       }
     }
   }

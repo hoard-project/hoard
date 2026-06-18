@@ -8,6 +8,8 @@ Wants=network-online.target
 Type=notify
 ExecStart=/usr/local/bin/hoard --config /etc/hoard/config.toml
 ExecReload=/bin/kill -HUP $MAINPID
+# Clean stale BPF pins on stop (survive SIGKILL)
+ExecStopPost=-/bin/sh -c 'rm -rf /sys/fs/bpf/hoard /sys/fs/bpf/hoard_maps 2>/dev/null; true'
 Restart=always
 RestartSec=10
 

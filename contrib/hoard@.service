@@ -30,6 +30,8 @@ ExecStart=/usr/local/bin/hoard \
   --gc-interval 21600 \
   --gc-ttl-days 30
 ExecReload=/bin/kill -HUP $MAINPID
+# Clean stale BPF pins on stop (survive SIGKILL)
+ExecStopPost=-/bin/sh -c 'rm -rf /sys/fs/bpf/hoard /sys/fs/bpf/hoard_maps 2>/dev/null; true'
 KillSignal=SIGTERM
 TimeoutStopSec=30
 

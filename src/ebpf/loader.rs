@@ -3,8 +3,9 @@
 //! Uses the `aya` crate to load CO-RE BPF programs and manage
 //! the RingBuffer for user-space event delivery.
 //!
-//! Hook: `fentry/vfs_write` with bpf_probe_read_kernel for
-//! safe struct field access across all filesystems.
+//! Hook: `fentry/vfs_write` + `fentry/generic_perform_write`
+//! with bpf_probe_read_kernel for safe struct field access
+//! across all filesystems.
 
 #![deny(unsafe_code)]
 
@@ -32,7 +33,34 @@ pub struct BpfProgram {
     ringbuf: Option<aya::maps::RingBuf<aya::maps::MapData>>,
 }
 
+impl Drop for BpfProgram {
+    fn drop(&mut self) {
+        // Explicitly drop ringbuf first to release any ongoing
+        // kernel-side operations before unloading programs.
+        self.ringbuf.take();
+        // aya::Ebpf::drop() detaches all programs and unloads maps.
+        tracing::info!("BPF programs detached, maps unloaded");
+    }
+}
+
 impl BpfProgram {
+    /// Clean up stale BPF filesystem pins from previous runs.
+    ///
+    /// These survive process death (especially SIGKILL) and can
+    /// cause ringbuf contention or map-reuse errors on restart.
+    pub fn cleanup_stale() {
+        let stale_dirs = ["/sys/fs/bpf/hoard_maps", "/sys/fs/bpf/hoard"];
+        for dir in &stale_dirs {
+            let p = std::path::Path::new(dir);
+            if p.exists() {
+                match std::fs::remove_dir_all(p) {
+                    Ok(()) => tracing::info!(path = %dir, "cleaned stale BPF pin directory"),
+                    Err(e) => tracing::warn!(path = %dir, %e, "failed to clean stale BPF pin directory"),
+                }
+            }
+        }
+    }
+
     /// Load the compiled BPF bytecode and attach all programs.
     ///
     /// If the BPF object file is missing or empty, gracefully degrades
@@ -40,6 +68,9 @@ impl BpfProgram {
     /// work) but won't intercept filesystem events.
     pub async fn load() -> Result<Self> {
         use aya::Ebpf;
+
+        // Clean stale pins before loading to avoid ringbuf contention.
+        Self::cleanup_stale();
 
         let bpf_path = {
             let installed = "/usr/lib/hoard/hoard.bpf.o";
@@ -80,13 +111,11 @@ impl BpfProgram {
 
         let mut bpf = Ebpf::load(&bpf_bytes).context("failed to load BPF program")?;
 
-        // Multi-hook: generic VFS + ext4-specific write_iter.
-        // vfs_write covers tmpfs/nfs/etc; ext4_file_write_iter covers ext4.
-        // Both resolve file→inode through their respective function args.
-        Self::attach_fentry(&mut bpf, "on_vfs_write", "vfs_write")?;
+        // Multi-hook: vfs_write covers tmpfs/nfs/etc.
         // generic_perform_write covers write()/dd/echo on ext4/xfs/tmpfs.
         // __generic_file_write_iter may be inlined on newer kernels (6.12+).
-        // Falls back to vfs_write-only if BTF is missing — non-fatal.
+        Self::attach_fentry(&mut bpf, "on_vfs_write", "vfs_write")?;
+
         if let Err(e) = Self::attach_fentry(
             &mut bpf,
             "on_generic_perform_write",
@@ -103,7 +132,7 @@ impl BpfProgram {
                 .ok_or_else(|| anyhow::anyhow!("'events' ring buffer map not found"))?;
             let rb =
                 RingBuf::try_from(map).context("failed to create RingBuf from 'events' map")?;
-            tracing::debug!("RingBuf initialized (persistent)");
+            tracing::debug!("RingBuf initialized");
             Some(rb)
         };
 
@@ -117,8 +146,6 @@ impl BpfProgram {
     fn attach_fentry(bpf: &mut aya::Ebpf, prog_name: &str, fn_name: &str) -> Result<()> {
         use aya::{programs::FEntry, Btf};
 
-        // FEntry requires the running kernel's BTF to resolve the
-        // target function's BTF ID. Load from /sys/kernel/btf/vmlinux.
         let btf = Btf::from_sys_fs()
             .context("failed to load kernel BTF for fentry — ensure CONFIG_DEBUG_INFO_BTF=y")?;
 
@@ -153,7 +180,7 @@ impl BpfProgram {
                         timestamp_ns,
                     }))
                 } else {
-                    tracing::warn!(len = slice.len(), "RingBuffer event too short");
+                    tracing::warn!(len = slice.len(), "short BPF ringbuf event");
                     Ok(None)
                 }
             }
