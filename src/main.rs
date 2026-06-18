@@ -24,20 +24,11 @@
 #![deny(clippy::cast_possible_truncation)]
 #![deny(clippy::cast_sign_loss)]
 
-mod cli;
-mod config;
-mod ebpf;
-mod fd;
-mod ffi;
-mod hoard;
-mod s3;
-mod trigger;
-mod upload;
-
-mod metrics;
-
 use anyhow::Result;
 use clap::Parser;
+use hoard::cli;
+use hoard::config::ValidatedConfig;
+use hoard::hoard::HoardStopped;
 use tracing_subscriber::{fmt, EnvFilter};
 
 /// Hoard — eBPF SQLite backup daemon

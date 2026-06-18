@@ -59,9 +59,17 @@ strip          = true
 opt-level      = 0
 debug          = true
 
+[lib]
+name = "hoard"
+path = "src/lib.rs"
+
 [[bin]]
 name = "hoard"
 path = "src/main.rs"
+
+[[bin]]
+name = "hoardctl"
+path = "src/ctl_main.rs"
 
 [[bin]]
 name = "test-upload"
