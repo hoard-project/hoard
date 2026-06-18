@@ -57,6 +57,25 @@ struct Cli {
 enum Command {
     /// Restore backups from S3 to local filesystem
     Restore(cli::restore::RestoreArgs),
+    /// Control the hoard daemon via Unix socket
+    Ctl {
+        #[command(subcommand)]
+        action: CtlAction,
+    },
+}
+
+#[derive(clap::Subcommand, Debug)]
+enum CtlAction {
+    /// Trigger immediate upload flush
+    Flush {
+        /// Service name
+        service: String,
+    },
+    /// Query daemon status
+    Status {
+        /// Service name
+        service: String,
+    },
 }
 
 /// Entry point.
@@ -83,6 +102,17 @@ async fn main() -> Result<()> {
                 .try_init()
                 .ok();
             cli::restore::run(args).await
+        }
+        Some(Command::Ctl { action }) => {
+            // Forward to hoardctl logic
+            match action {
+                CtlAction::Flush { service } => {
+                    cli::ctl::run_flush(&service).await
+                }
+                CtlAction::Status { service } => {
+                    cli::ctl::run_status(&service).await
+                }
+            }
         }
         None => {
             // JSON logging for daemon

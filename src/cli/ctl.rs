@@ -139,3 +139,40 @@ pub async fn run() -> Result<()> {
 
     Ok(())
 }
+
+/// Send a flush command to the daemon via Unix socket.
+pub async fn run_flush(service: &str) -> Result<()> {
+    let sock = PathBuf::from(format!("/run/hoard/{service}.sock"));
+    let stream = tokio::net::UnixStream::connect(&sock)
+        .await
+        .with_context(|| format!("failed to connect to {}: hoard daemon not running?", sock.display()))?;
+
+    stream.writable().await?;
+    use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+    let (rx, mut tx) = stream.into_split();
+    tx.write_all(b"flush\n").await?;
+    tx.shutdown().await?;
+
+    let mut response = String::new();
+    BufReader::new(rx).read_line(&mut response).await?;
+    print!("{response}");
+    Ok(())
+}
+
+/// Send a status query to the daemon via Unix socket.
+pub async fn run_status(service: &str) -> Result<()> {
+    let sock = PathBuf::from(format!("/run/hoard/{service}.sock"));
+    let stream = tokio::net::UnixStream::connect(&sock)
+        .await
+        .with_context(|| format!("failed to connect to {}", sock.display()))?;
+
+    use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+    let (rx, mut tx) = stream.into_split();
+    tx.write_all(b"status\n").await?;
+    tx.shutdown().await?;
+
+    let mut response = String::new();
+    BufReader::new(rx).read_line(&mut response).await?;
+    print!("{response}");
+    Ok(())
+}
