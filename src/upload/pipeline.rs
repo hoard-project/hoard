@@ -181,7 +181,12 @@ impl UploadPipeline<Connected> {
             .as_ref()
             .and_then(|u| u.split('/').nth(2))
             .unwrap_or("localhost:443");
-        let stream = TcpStream::connect(host_port)?;
+        let addr: std::net::SocketAddr =
+            host_port.parse().context("failed to parse S3 host:port")?;
+        let stream = TcpStream::connect_timeout(&addr, std::time::Duration::from_secs(10))?;
+        // Set read timeout so shutdown_and_read() doesn't block forever
+        // on slow/remote S3 endpoints (30s for the HTTP response).
+        stream.set_read_timeout(Some(std::time::Duration::from_secs(30)))?;
         let sock = SocketFd::from(stream);
 
         // Enable kTLS if keys are provided
