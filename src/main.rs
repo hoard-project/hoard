@@ -34,7 +34,6 @@ mod s3;
 mod trigger;
 mod upload;
 
-#[cfg(feature = "prometheus")]
 mod metrics;
 
 use anyhow::Result;

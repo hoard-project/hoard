@@ -96,14 +96,17 @@ impl EbpfAttached {
                                             let _ = tx.send(()).await;
                                             let _ = tx_w.write_all(b"ok: flush triggered\n").await;
                                         }
-                                        Some(crate::trigger::standalone::ControlCommand::Status) => {
+                                        Some(
+                                            crate::trigger::standalone::ControlCommand::Status,
+                                        ) => {
                                             let status = format!(
                                                 "{{\"version\":\"{ver}\",\"mode\":\"standalone\",\"service\":\"{svc}\"}}\n"
                                             );
                                             let _ = tx_w.write_all(status.as_bytes()).await;
                                         }
                                         None => {
-                                            let _ = tx_w.write_all(b"error: unknown command\n").await;
+                                            let _ =
+                                                tx_w.write_all(b"error: unknown command\n").await;
                                         }
                                     }
                                 }
