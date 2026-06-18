@@ -1,6 +1,6 @@
 [Unit]
-Description=Hoard eBPF SQLite Backup Daemon
-Documentation=https://github.com/k3s-forge/nomad-gitops
+Description=Hoard eBPF file-change replication daemon
+Documentation=https://github.com/hoard-project/hoard
 After=network-online.target
 Wants=network-online.target
 
@@ -15,7 +15,7 @@ RestartSec=10
 NoNewPrivileges=yes
 ProtectSystem=strict
 ProtectHome=yes
-ReadWritePaths=/opt/hoard-watch /var/lib/hoard
+ReadWritePaths=/var/lib/hoard /run/hoard
 PrivateTmp=yes
 ProtectKernelTunables=yes
 ProtectKernelModules=yes
@@ -25,7 +25,7 @@ RestrictRealtime=yes
 RestrictNamespaces=yes
 LockPersonality=yes
 
-# BPF needs these
+# BPF needs these capabilities
 CapabilityBoundingSet=CAP_BPF CAP_SYS_ADMIN CAP_NET_RAW
 AmbientCapabilities=CAP_BPF CAP_SYS_ADMIN CAP_NET_RAW
 

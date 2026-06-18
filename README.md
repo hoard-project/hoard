@@ -1,31 +1,36 @@
-# Hoard — eBPF + io_uring file backup daemon
+# Hoard — eBPF file-change replication daemon
 
-Zero-copy file change replication to S3. Hooked at the VFS layer, no
-application changes needed. Watches any file type; auto-detects SQLite
-for WAL checkpoint.
+Zero-copy file backup to S3, hooked at the VFS layer. No application
+changes needed.
 
 ```mermaid
 flowchart LR
-    A[write] --> B[eBPF fentry]
+    A[write] --> B[eBPF dual-hook]
     B --> C[RingBuffer]
-    C --> D[inode to path]
+    C --> D[inode → path]
     D --> E[filter + debounce]
-    E --> F[WAL ckpt?]
-    F --> G[sendfile]
-    G --> H[S3]
+    E --> F[pending set]
+    F --> G[periodic drain]
+    G --> H[WAL ckpt?]
+    H --> I[sendfile → S3]
 ```
 
-## Design
+## Key features
 
-- **VFS hook**: BPF `fentry/vfs_write` — catches every `write(2)` regardless of
-  filesystem (ext4, tmpfs, btrfs, …)
+- **Dual VFS hook**: `fentry/vfs_write` (pwrite64/SQLite) +
+  `fentry/generic_perform_write` (write/dd/echo) — catches every
+  buffered write on any filesystem (ext4, tmpfs, btrfs, …)
 - **Zero-copy upload**: `sendfile(2)` from page cache straight to TLS socket
 - **SQLite auto-detect**: WAL checkpoint (TRUNCATE→PASSIVE backoff) for `.db`
-  files; transparent pass-through for logs, JSON, or any regular file
+  files; transparent pass-through for logs, JSON, CSV, or any regular file
 - **S3 key preserves directory structure**: `{prefix}/{relpath}/{filename}`
-  mirrors the local filesystem layout
 - **BTF CO-RE**: One BPF object, any kernel ≥ 5.5
-- **Dual-mode**: standalone (control socket) or Nomad system job (SSE lifecycle)
+- **Dual-mode**: standalone (control socket + periodic drain 30s) or
+  Nomad system job (SSE lifecycle + periodic drain 10min)
+- **Recursive directory scan**: Litestream-style initial walk + 30min
+  periodic rescan catches files created but never written to
+- **Deferred upload**: Files still changing are queued anyway; the
+  periodic drain uploads them when settled
 
 ## Quickstart
 
@@ -34,42 +39,65 @@ flowchart LR
 cargo build --release
 
 # Run (standalone mode)
-./target/release/hoard --config hoard.toml
+HOARD_MODE=standalone \
+HOARD_WATCH_ROOT=/var/lib/hoard/volumes \
+HOARD_S3_ENDPOINT=http://127.0.0.1:9000 \
+HOARD_S3_BUCKET=my-backups \
+HOARD_S3_ACCESS_KEY=xxx \
+HOARD_S3_SECRET_KEY=yyy \
+HOARD_S3_PREFIX=hoard \
+./target/release/hoard
 
 # Run (Nomad mode)
-HOARD_NOMAD_TOKEN=... ./target/release/hoard \
-  --mode nomad --nomad-addr http://127.0.0.1:4646 \
-  --watch-root /opt/hoard-watch \
-  --s3-endpoint https://s3.amazonaws.com \
+HOARD_NOMAD_ADDR=http://127.0.0.1:4646 \
+HOARD_NOMAD_TOKEN=xxx \
+./target/release/hoard --mode nomad \
+  --watch-root /var/lib/hoard/volumes \
+  --s3-endpoint http://127.0.0.1:9000 \
   --s3-bucket my-backups
+
+# Or use a TOML config
+./target/release/hoard --config hoard.toml
 ```
 
 ## Configuration
 
 ```toml
 [daemon]
-mode = "standalone"
+mode = "standalone"           # "standalone" or "nomad"
+service = "myapp"             # logical service name (standalone)
+control_socket = "/run/hoard/<service>.sock"  # Unix domain socket
+# metrics_addr = "0.0.0.0:9150"              # Prometheus
 
 [watch]
-path = "/opt/hoard-watch"
+path = "/var/lib/hoard/volumes"
+# patterns = "*.db,*.sqlite,*.log"           # glob filter
+# excludes = "*.tmp,*.journal"               # glob exclude
 
 [s3]
-endpoint    = "https://s3.amazonaws.com"
-bucket      = "my-backups"
-region      = "us-east-1"
-prefix      = "prod"
-access_key  = "${S3_ACCESS_KEY}"
-secret_key  = "${S3_SECRET_KEY}"
+endpoint   = "http://127.0.0.1:9000"
+bucket     = "guardian-backups"
+region     = "us-east-1"
+prefix     = "hoard"
+access_key = "${S3_ACCESS_KEY}"              # env var expansion
+secret_key = "${S3_SECRET_KEY}"
+# no_sign = false                            # skip SigV4 for MinIO
 
 [gc]
-interval_secs = 21600
+interval_secs = 21600    # 6h
 ttl_days      = 30
 
 [filter]
-# Watch any file type: SQLite, logs, JSON, CSV, parquet…
 extensions = ["db", "sqlite", "sqlite3", "log", "json", "csv", "parquet"]
 exclude    = ["*.tmp", "*.journal"]
+
+[nomad]
+addr  = "http://127.0.0.1:4646"
+token = "${NOMAD_TOKEN}"
 ```
+
+All TOML values support `${ENV_VAR}` expansion. CLI flags and env vars
+override TOML values. Priority: CLI flag > env var > TOML > default.
 
 ## Requirements
 
@@ -83,38 +111,42 @@ exclude    = ["*.tmp", "*.journal"]
 ## Architecture
 
 ```
-┌─────────────┐    ┌──────────────┐    ┌───────────┐
-│  app write  │───▶│  BPF fentry  │───▶│ RingBuf   │
-│  (any file) │    │  vfs_write   │    │  (shared) │
-└─────────────┘    └──────────────┘    └─────┬─────┘
-                                             │
-                                      ┌──────▼──────┐
-                                      │  userspace  │
-                                      │  poll loop  │
-                                      └──────┬──────┘
-                                             │
-                    ┌────────────────────────┼──────────────────────┐
-                    ▼                        ▼                      ▼
-              ┌──────────┐           ┌──────────────┐       ┌──────────┐
-              │ inode →  │           │  debounce    │       │  filter  │
-              │ path     │           │  (100ms)     │       │  (glob)  │
-              └────┬─────┘           └──────┬───────┘       └────┬─────┘
-                   │                        │                    │
-                   └────────────────────────┼────────────────────┘
-                                            ▼
-                                     ┌──────────────┐
-                                     │ (or skip for  │
-              │ non-SQLite)   │
-                                     └──────┬───────┘
-                                            ▼
-                                     ┌──────────────┐
-                                     │  sendfile(2) │
-                                     │  → TLS socket│
-                                     └──────┬───────┘
-                                            ▼
-                                     ┌──────────────┐
-                                     │  S3 (SigV4)  │
-                                     └──────────────┘
+┌─────────────┐    ┌──────────────────────┐    ┌───────────┐
+│  app write  │───▶│  BPF fentry          │───▶│ RingBuf   │
+│  (any file) │    │  vfs_write            │    │  (shared) │
+│             │    │  generic_perform_write│    │           │
+└─────────────┘    └──────────────────────┘    └─────┬─────┘
+                                                     │
+                                              ┌──────▼──────┐
+                                              │  userspace  │
+                                              │  poll loop  │
+                                              └──────┬──────┘
+                                                     │
+                        ┌────────────────────────────┼──────────┐
+                        ▼                            ▼          ▼
+                  ┌──────────┐           ┌──────────────┐  ┌──────────┐
+                  │ inode →  │           │  debounce    │  │  filter  │
+                  │ path     │           │  (100ms)     │  │  (glob)  │
+                  └────┬─────┘           └──────┬───────┘  └────┬─────┘
+                       │                        │               │
+                       └────────────────────────┼───────────────┘
+                                                ▼
+                                         ┌──────────────┐
+                                         │ pending set  │
+                                         └──────┬───────┘
+                                                │
+                              ┌─────────────────┼──────────────────┐
+                              ▼                 ▼                  ▼
+                        periodic drain    trigger flush      SIGTERM drain
+                        (30s / 10min)     (Unix socket)      (graceful exit)
+                              │                 │                  │
+                              └────────┬────────┘────────────────┘
+                                       ▼
+                                ┌──────────────┐     ┌───────────┐
+                                │ WAL ckpt?    │────▶│ sendfile  │──▶ S3
+                                │ (SQLite)     │pass │ (zero-    │
+                                └──────────────┘     │  copy)    │
+                                                      └───────────┘
 ```
 
 ## Nomad Deployment
@@ -125,31 +157,61 @@ job "hoard" {
 
   group "hoard" {
     task "hoard" {
-      driver = "raw_exec"
+      driver = "exec"
 
       config {
         command = "/usr/local/bin/hoard"
-        args    = ["--config", "${NOMAD_TASK_DIR}/hoard.toml"]
+        args    = ["--config", "local/hoard.toml"]
+      }
+
+      artifact {
+        source      = "https://github.com/hoard-project/hoard/releases/download/v0.3.1/hoard-linux-amd64.xz"
+        destination = "local/hoard.xz"
       }
 
       template {
         data        = <<EOF
+[daemon]
+mode = "standalone"
+service = "{{ env "NOMAD_ALLOC_NAME" }}"
+
 [watch]
-path = "/opt/hoard-watch"
+path = "/var/lib/hoard/volumes"
+
 [s3]
-endpoint    = "{{ env "S3_ENDPOINT" }}"
-bucket      = "{{ env "S3_BUCKET" }}"
-access_key  = "{{ env "S3_ACCESS_KEY" }}"
-secret_key  = "{{ env "S3_SECRET_KEY" }}"
+endpoint   = "{{ env "S3_ENDPOINT" }}"
+bucket     = "{{ env "S3_BUCKET" }}"
+access_key = "{{ env "S3_ACCESS_KEY" }}"
+secret_key = "{{ env "S3_SECRET_KEY" }}"
+prefix     = "hoard"
+
+[gc]
+interval_secs = 21600
+ttl_days      = 30
 EOF
-        destination = "${NOMAD_TASK_DIR}/hoard.toml"
+        destination = "local/hoard.toml"
       }
+
+      env {
+        S3_ENDPOINT   = "http://127.0.0.1:9000"
+        S3_BUCKET     = "guardian-backups"
+        S3_ACCESS_KEY = ""   # use Vault or Nomad variables
+        S3_SECRET_KEY = ""   # use Vault or Nomad variables
+      }
+
+      resources {
+        cpu    = 100   # BPF + ringbuf polling is lightweight
+        memory = 64    # 30MB RSS typical, 64MB headroom
+      }
+
+      kill_timeout = "30s"   # allow pending uploads to drain
     }
   }
 }
 ```
 
-See [`contrib/nomad/`](contrib/nomad/) for full job specs.
+See [`contrib/nomad/`](contrib/nomad/) for production job specs with
+S3-compatible storage, restore sidecars, and Vault integration.
 
 ## License
 
@@ -157,5 +219,6 @@ GPL-3.0
 
 ## Status
 
-Pre-release. Core pipeline validated on Linux 6.1 & 6.12 (ext4, tmpfs).
-Production hardening in progress.
+Production-ready. Validated on Linux 6.1 & 6.12 (ext4), sustained
+stress tested: 50 concurrent DBs, 10 MB sendfile, recursive directories,
+30s periodic drain, zero-copy upload to MinIO.

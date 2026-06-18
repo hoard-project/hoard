@@ -1,0 +1,37 @@
+# Hoard — example standalone configuration
+#
+# Copy to /etc/hoard/config.toml and adjust values.
+# All string values support ${ENV_VAR} expansion.
+# CLI flags and env vars override TOML values.
+
+[daemon]
+mode = "standalone"                   # "standalone" or "nomad"
+service = "myapp"                      # logical service name (standalone)
+# control_socket = "/run/hoard/myapp.sock"  # default: /run/hoard/<service>.sock
+# metrics_addr = "0.0.0.0:9150"            # Prometheus metrics endpoint
+
+[watch]
+path     = "/var/lib/hoard/volumes"    # root directory to watch recursively
+# patterns = "*.db,*.sqlite,*.log"        # comma-separated glob patterns (optional)
+# excludes = "*.tmp,*.journal"            # comma-separated exclude globs (optional)
+
+[s3]
+endpoint   = "http://127.0.0.1:9000"   # S3-compatible endpoint
+region     = "us-east-1"
+bucket     = "guardian-backups"
+prefix     = "hoard"                    # S3 key prefix: {prefix}/{relpath}/{filename}
+access_key = "${S3_ACCESS_KEY}"        # set via env var or Vault
+secret_key = "${S3_SECRET_KEY}"        # set via env var or Vault
+# no_sign = false                       # skip SigV4 for local MinIO
+
+[gc]
+interval_secs = 21600                  # 6 hours
+ttl_days      = 30                     # delete S3 objects older than 30 days
+
+[filter]
+extensions = ["db", "sqlite", "sqlite3", "wal", "log", "json", "csv", "parquet"]
+exclude    = ["*.tmp", "*.journal"]
+
+[nomad]
+# addr  = "http://127.0.0.1:4646"      # Nomad API address (nomad mode)
+# token = "${NOMAD_TOKEN}"              # Nomad ACL token (nomad mode)
