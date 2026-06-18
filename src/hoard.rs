@@ -270,7 +270,6 @@ impl HoardReady {
                             );
                         }
                         let _ = tx.send(e);
-                        #[cfg(feature = "prometheus")]
                         crate::metrics::RINGBUF_EVENTS_TOTAL.inc();
                     }
                 }
@@ -354,7 +353,6 @@ impl HoardReady {
                     match crate::s3::gc::gc_cycle(&s3, &prefix, ttl).await {
                         Ok(stats) => {
                             tracing::info!(?stats, "GC cycle complete");
-                            #[cfg(feature = "prometheus")]
                             {
                                 crate::metrics::GC_CYCLES_TOTAL.inc();
                                 crate::metrics::GC_DELETED_TOTAL.inc_by(stats.deleted as f64);
@@ -534,7 +532,6 @@ impl HoardReady {
         watch_root: &std::path::Path,
         prefix: &str,
     ) {
-        #[cfg(feature = "prometheus")]
         crate::metrics::UPLOAD_TOTAL.inc();
 
         let file_name = path
@@ -564,7 +561,6 @@ impl HoardReady {
             Ok(f) => f,
             Err(e) => {
                 tracing::error!(path = %path.display(), %e, "failed to open file for upload");
-                #[cfg(feature = "prometheus")]
                 crate::metrics::UPLOAD_FAILURES_TOTAL.inc();
                 return;
             }
@@ -573,7 +569,6 @@ impl HoardReady {
             Ok(m) => m.len(),
             Err(e) => {
                 tracing::error!(path = %path.display(), %e, "failed to stat file");
-                #[cfg(feature = "prometheus")]
                 crate::metrics::UPLOAD_FAILURES_TOTAL.inc();
                 return;
             }
@@ -593,7 +588,6 @@ impl HoardReady {
             Ok(p) => p,
             Err(e) => {
                 tracing::error!(s3_key, %e, "WAL checkpoint failed");
-                #[cfg(feature = "prometheus")]
                 crate::metrics::UPLOAD_FAILURES_TOTAL.inc();
                 return;
             }
@@ -604,7 +598,6 @@ impl HoardReady {
             Ok(p) => p,
             Err(e) => {
                 tracing::error!(s3_key, %e, "S3 presign failed");
-                #[cfg(feature = "prometheus")]
                 crate::metrics::UPLOAD_FAILURES_TOTAL.inc();
                 return;
             }
@@ -615,7 +608,6 @@ impl HoardReady {
             Ok(p) => p,
             Err(e) => {
                 tracing::error!(s3_key, %e, "TCP connect failed");
-                #[cfg(feature = "prometheus")]
                 crate::metrics::UPLOAD_FAILURES_TOTAL.inc();
                 return;
             }
@@ -626,7 +618,6 @@ impl HoardReady {
             Ok(pair) => pair,
             Err(e) => {
                 tracing::error!(s3_key, %e, "header write failed");
-                #[cfg(feature = "prometheus")]
                 crate::metrics::UPLOAD_FAILURES_TOTAL.inc();
                 return;
             }
@@ -636,7 +627,6 @@ impl HoardReady {
             Ok(p) => p,
             Err(e) => {
                 tracing::error!(s3_key, %e, "sendfile failed");
-                #[cfg(feature = "prometheus")]
                 crate::metrics::UPLOAD_FAILURES_TOTAL.inc();
                 return;
             }
@@ -646,17 +636,14 @@ impl HoardReady {
         match body_sent.shutdown_and_read(sock) {
             Ok(outcome) if outcome.is_success() => {
                 tracing::info!(s3_key, status = outcome.status_code, etag = ?outcome.etag(), "upload succeeded");
-                #[cfg(feature = "prometheus")]
                 crate::metrics::UPLOAD_BYTES_TOTAL.inc_by(file_size as f64);
             }
             Ok(outcome) => {
                 tracing::error!(s3_key, status = outcome.status_code, error = ?outcome.error(), "upload failed");
-                #[cfg(feature = "prometheus")]
                 crate::metrics::UPLOAD_FAILURES_TOTAL.inc();
             }
             Err(e) => {
                 tracing::error!(s3_key, %e, "shutdown/read failed");
-                #[cfg(feature = "prometheus")]
                 crate::metrics::UPLOAD_FAILURES_TOTAL.inc();
             }
         }

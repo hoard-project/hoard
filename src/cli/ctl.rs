@@ -74,7 +74,7 @@ pub async fn run() -> Result<()> {
                 })?;
 
             stream.writable().await?;
-            use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
+            use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
             let (rx, mut tx) = stream.into_split();
             tx.write_all(b"flush\n").await?;
             tx.shutdown().await?;
