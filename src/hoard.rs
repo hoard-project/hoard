@@ -204,11 +204,13 @@ impl HoardReady {
             });
         }
 
-        // Nomad mode: periodic drain every 10 minutes (in addition to SSE triggers)
+        // Periodic drain: in Nomad mode every 10 min via SSE triggers,
+        // in standalone mode every 30s so BPF-detected changes are
+        // actually uploaded without waiting for SIGTERM.
         let drain_interval = if config.mode == Mode::Nomad {
             Duration::from_secs(600)
         } else {
-            Duration::from_secs(u64::MAX) // effectively never
+            Duration::from_secs(30) // standalone: drain pending every 30s
         };
         let mut periodic_drain = tokio::time::interval(drain_interval);
         periodic_drain.tick().await; // skip first immediate tick
