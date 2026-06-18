@@ -106,12 +106,8 @@ async fn main() -> Result<()> {
         Some(Command::Ctl { action }) => {
             // Forward to hoardctl logic
             match action {
-                CtlAction::Flush { service } => {
-                    cli::ctl::run_flush(&service).await
-                }
-                CtlAction::Status { service } => {
-                    cli::ctl::run_status(&service).await
-                }
+                CtlAction::Flush { service } => cli::ctl::run_flush(&service).await,
+                CtlAction::Status { service } => cli::ctl::run_status(&service).await,
             }
         }
         None => {

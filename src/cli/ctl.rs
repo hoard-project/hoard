@@ -145,7 +145,12 @@ pub async fn run_flush(service: &str) -> Result<()> {
     let sock = PathBuf::from(format!("/run/hoard/{service}.sock"));
     let stream = tokio::net::UnixStream::connect(&sock)
         .await
-        .with_context(|| format!("failed to connect to {}: hoard daemon not running?", sock.display()))?;
+        .with_context(|| {
+            format!(
+                "failed to connect to {}: hoard daemon not running?",
+                sock.display()
+            )
+        })?;
 
     stream.writable().await?;
     use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
