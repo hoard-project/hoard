@@ -49,7 +49,8 @@ jobs:
           cp target/release/hoard target/release/hoard-${{ matrix.artifact_suffix }}
           strip target/release/hoard-${{ matrix.artifact_suffix }}
           xz -9 -T0 target/release/hoard-${{ matrix.artifact_suffix }}
-          ls -lh target/release/hoard-${{ matrix.artifact_suffix }}.xz
+          mv target/release/hoard-${{ matrix.artifact_suffix }}.xz .
+          ls -lh hoard-${{ matrix.artifact_suffix }}.xz
 
       - name: Generate vmlinux.h from runner kernel BTF
         run: |
@@ -72,7 +73,7 @@ jobs:
         with:
           name: hoard-${{ matrix.artifact_suffix }}
           path: |
-            target/release/hoard-${{ matrix.artifact_suffix }}.xz
+            hoard-${{ matrix.artifact_suffix }}.xz
             hoard-bpf-${{ matrix.bpf_arch }}.o.xz
 
   # ── Create GitHub Release (aggregates all matrix artifacts) ──
