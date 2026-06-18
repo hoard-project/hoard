@@ -201,7 +201,7 @@ impl NomadEventStream {
         // reqwest 0.13 is opaque (`impl Stream`), not nameable.
         let stream = resp.bytes_stream().map(
             |r: Result<Bytes, reqwest::Error>| -> std::io::Result<Bytes> {
-                r.map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))
+                r.map_err(|e| std::io::Error::other(e))
             },
         );
         let stream_reader = tokio_util::io::StreamReader::new(stream);

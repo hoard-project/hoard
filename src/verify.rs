@@ -51,35 +51,35 @@ mod tests {
 
     #[test]
     fn test_file_md5_known() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = tempfile::tempdir().expect("tempdir");
         let path = dir.path().join("test.bin");
-        std::fs::write(&path, b"hello world\n").unwrap();
-        let digest = file_md5(&path).unwrap();
+        std::fs::write(&path, b"hello world\n").expect("write test file");
+        let digest = file_md5(&path).expect("compute md5");
         // echo -n "hello world\n" | md5sum → 6f5902ac237024bdd0c176cb93063dc4
         assert_eq!(digest, "6f5902ac237024bdd0c176cb93063dc4");
     }
 
     #[test]
     fn test_verify_etag_match() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = tempfile::tempdir().expect("tempdir");
         let path = dir.path().join("test.bin");
-        std::fs::write(&path, b"hello world\n").unwrap();
+        std::fs::write(&path, b"hello world\n").expect("write test file");
         assert!(verify_etag(&path, "6f5902ac237024bdd0c176cb93063dc4").is_ok());
     }
 
     #[test]
     fn test_verify_etag_quoted() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = tempfile::tempdir().expect("tempdir");
         let path = dir.path().join("test.bin");
-        std::fs::write(&path, b"hello world\n").unwrap();
+        std::fs::write(&path, b"hello world\n").expect("write test file");
         assert!(verify_etag(&path, "\"6f5902ac237024bdd0c176cb93063dc4\"").is_ok());
     }
 
     #[test]
     fn test_verify_etag_mismatch() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = tempfile::tempdir().expect("tempdir");
         let path = dir.path().join("test.bin");
-        std::fs::write(&path, b"hello world\n").unwrap();
+        std::fs::write(&path, b"hello world\n").expect("write test file");
         assert!(verify_etag(&path, "deadbeef").is_err());
     }
 }

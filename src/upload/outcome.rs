@@ -31,6 +31,7 @@ impl UploadOutcome {
     }
 
     /// Create a failure outcome.
+    #[allow(dead_code)]
     pub fn failure(status_code: u16, error_body: String) -> Self {
         Self {
             status_code,
@@ -45,6 +46,7 @@ impl UploadOutcome {
     }
 
     /// Is this error retryable? (5xx or 429 Too Many Requests)
+    #[allow(dead_code)]
     pub fn is_retryable(&self) -> bool {
         matches!(self.status_code, 500..=599 | 429)
     }
@@ -55,6 +57,7 @@ impl UploadOutcome {
     }
 
     /// Get the error message if upload failed.
+    #[allow(dead_code)]
     pub fn error(&self) -> Option<&str> {
         self.error_body.as_deref()
     }
