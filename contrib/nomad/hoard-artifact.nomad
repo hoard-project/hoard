@@ -155,7 +155,7 @@ EOF
 
       kill_timeout = "30s"
 
-      restart_policy {
+      restart {
         interval = "5m"
         attempts = 3
         delay    = "15s"
