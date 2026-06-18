@@ -58,25 +58,25 @@ lazy_static! {
     pub static ref GC_DELETED_TOTAL: Counter = register_counter!(
         "hoard_gc_deleted_total",
         "Total objects deleted by GC"
-    ).unwrap();
+    ).expect("duplicate metric: hoard_gc_deleted_total");
 
     /// Total GC errors.
     pub static ref GC_ERRORS_TOTAL: Counter = register_counter!(
         "hoard_gc_errors_total",
         "Total GC errors"
-    ).unwrap();
+    ).expect("duplicate metric: hoard_gc_errors_total");
 
     /// RingBuffer events received.
     pub static ref RINGBUF_EVENTS_TOTAL: Counter = register_counter!(
         "hoard_ringbuf_events_total",
         "Total BPF RingBuffer events received"
-    ).unwrap();
+    ).expect("duplicate metric: hoard_ringbuf_events_total");
 
     /// Upload failures.
     pub static ref UPLOAD_FAILURES_TOTAL: Counter = register_counter!(
         "hoard_upload_failures_total",
         "Total upload failures"
-    ).unwrap();
+    ).expect("duplicate metric: hoard_upload_failures_total");
 }
 
 // ── Metrics server ─────────────────────────────────────────────────
@@ -120,7 +120,7 @@ async fn metrics_handler(
             Ok(Response::builder()
                 .status(StatusCode::OK)
                 .body(Full::new(Bytes::from("flush triggered\n")))
-                .unwrap())
+                .expect("failed to build flush response"))
         }
         _ => {
             let encoder = prometheus::TextEncoder::new();
@@ -133,7 +133,7 @@ async fn metrics_handler(
                 .status(200)
                 .header("Content-Type", "text/plain; version=0.0.4")
                 .body(Full::new(Bytes::from(buffer)))
-                .unwrap())
+                .expect("failed to build metrics response"))
         }
     }
 }
