@@ -550,13 +550,7 @@ impl HoardReady {
         }
     }
 
-    /// Upload a single file through the full pipeline with retry+backoff.
-    ///
-    /// On failure, retries up to `retry_cfg.max_attempts` with exponential
-    /// backoff. Files exceeding max attempts are moved to the dead-letter queue.
-    /// On success, removes the file from the pending set.
-    ///
-    /// Returns `Ok(())` on success, `Err(last_error)` if all retries exhausted.
+    /// Upload with full retry+backoff+dead-letter. Used from the main loop.
     async fn upload_file(
         s3: &VerifiedS3Backend,
         path: &std::path::Path,
@@ -573,7 +567,6 @@ impl HoardReady {
 
             match result {
                 Ok(()) => {
-                    // Remove from pending set — file is safely in S3
                     pending.lock().await.remove(path);
                     return Ok(());
                 }
@@ -595,7 +588,6 @@ impl HoardReady {
             }
         }
 
-        // All retries exhausted — move to dead-letter queue
         let entry = DeadLetter {
             original_path: path.to_path_buf(),
             attempts: retry_cfg.max_attempts,
@@ -604,8 +596,23 @@ impl HoardReady {
         if let Err(e) = write_dead_letter(dead_letter_dir, &entry) {
             tracing::error!(%e, path = %path.display(), "failed to write dead-letter entry");
         }
-        // Keep in pending set — operator can re-trigger later
         Err(last_error)
+    }
+
+    /// Upload a single attempt without retry or pending management.
+    /// Used by initial/periodic scans (which don't go through the pending set).
+    pub(crate) async fn upload_file_once_scan(
+        s3: &VerifiedS3Backend,
+        path: &std::path::Path,
+        watch_root: &std::path::Path,
+        prefix: &str,
+    ) {
+        match Self::upload_file_once(s3, path, watch_root, prefix).await {
+            Ok(()) => {}
+            Err(e) => {
+                tracing::error!(path = %path.display(), %e, "scan upload failed");
+            }
+        }
     }
 
     /// Single upload attempt (no retry). Returns Ok(()) or Err(description).
@@ -747,7 +754,7 @@ async fn run_initial_scan(
                 inode_cache.insert(dev, ino, path.clone()).await;
 
                 // Baseline upload
-                HoardReady::upload_file(s3, &path, watch_root, s3_prefix).await;
+                HoardReady::upload_file_once_scan(s3, &path, watch_root, s3_prefix).await;
                 stats.uploaded += 1;
             }
         }

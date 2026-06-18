@@ -35,14 +35,16 @@ impl PersistentPending {
         )
         .context("failed to initialize pending table")?;
 
-        // Recover existing entries
+        // Recover existing entries — collect paths, then drop stmt to release borrow
         let mut set = std::collections::HashSet::new();
-        let mut stmt = db.prepare("SELECT path FROM pending")?;
-        let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
-        for row in rows {
-            let path = row?;
-            set.insert(PathBuf::from(path));
-        }
+        {
+            let mut stmt = db.prepare("SELECT path FROM pending")?;
+            let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
+            for row in rows {
+                let path = row?;
+                set.insert(PathBuf::from(path));
+            }
+        } // stmt dropped here — borrow on `db` released
 
         tracing::info!(count = set.len(), "pending db opened, recovered entries");
 
