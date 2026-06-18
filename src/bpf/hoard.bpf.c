@@ -1,5 +1,6 @@
-// Hoard eBPF v5 — multi-hook: vfs_write + ext4_file_write_iter
-// Covers both generic VFS writes (tmpfs, nfs) and ext4 direct writes.
+// Hoard eBPF v6 — multi-hook: vfs_write + __generic_file_write_iter
+// Covers pwrite64 (SQLite) via vfs_write and write()/dd via __generic_file_write_iter.
+// __generic_file_write_iter is the common buffered-write entry for ext4/xfs/tmpfs.
 
 #include "vmlinux.h"
 
@@ -71,7 +72,7 @@ static __always_inline void inc_diag(void) {
     if (c) __sync_fetch_and_add(c, 1);
 }
 
-// Hook 1: generic VFS (tmpfs, nfs, etc.)
+// Hook 1: vfs_write — captures pwrite64 (SQLite primary path)
 SEC("fentry/vfs_write")
 int on_vfs_write(void *ctx) {
     inc_diag();
@@ -79,12 +80,14 @@ int on_vfs_write(void *ctx) {
     return 0;
 }
 
-// Hook 2: ext4 write_iter — file is in kiocb->ki_filp
-SEC("fentry/ext4_file_write_iter")
-int on_ext4_write_iter(void *ctx) {
+// Hook 2: __generic_file_write_iter — captures write() on ext4/xfs/tmpfs
+//         (__generic_file_write_iter is the buffered write path used by all
+//          major filesystems; ext4_file_write_iter is often inlined/absent)
+//         First arg is struct kiocb *; file = iocb->ki_filp.
+SEC("fentry/__generic_file_write_iter")
+int on_generic_file_write_iter(void *ctx) {
     inc_diag();
-    unsigned long *args = (unsigned long *)ctx;
-    struct kiocb *iocb = (struct kiocb *)args[0];
+    struct kiocb *iocb = (struct kiocb *)((unsigned long *)ctx)[0];
     if (!iocb) return 0;
     maybe_emit_from_file(iocb->ki_filp);
     return 0;
