@@ -221,13 +221,13 @@ impl HoardReady {
         // ── Start Prometheus metrics server ──
         {
             let metrics_addr = config.metrics_addr.clone();
+            tracing::info!(addr = %metrics_addr, "Prometheus metrics endpoint starting");
             let tx = flush_tx.clone();
             tokio::spawn(async move {
                 if let Err(e) = crate::metrics::serve_metrics(&metrics_addr, Some(tx)).await {
                     tracing::error!(%e, "metrics server failed");
                 }
             });
-            tracing::info!(addr = %metrics_addr, "Prometheus metrics endpoint started");
         }
 
         // Periodic drain: in Nomad mode every 10 min via SSE triggers,
