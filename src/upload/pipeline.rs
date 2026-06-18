@@ -84,6 +84,15 @@ impl UploadPipeline<Pending> {
                             continue;
                         }
                         Err(e) => {
+                            // If TRUNCATE fails with "not a database",
+                            // this isn't a real SQLite file — skip silently.
+                            if is_not_db(&e) {
+                                tracing::debug!(
+                                    path = %self.db_path.display(),
+                                    "not a valid SQLite database, skipping WAL checkpoint"
+                                );
+                                break;
+                            }
                             tracing::warn!(
                                 ?e,
                                 "TRUNCATE failed, falling back to PASSIVE checkpoint"
@@ -120,6 +129,24 @@ fn is_busy(e: &rusqlite::Error) -> bool {
         rusqlite::Error::SqliteFailure(
             rusqlite::ffi::Error {
                 code: rusqlite::ffi::ErrorCode::DatabaseBusy,
+                ..
+            },
+            _,
+        )
+    )
+}
+
+/// Check whether a rusqlite error indicates "not a database".
+///
+/// Files that happen to be named `*.db` but aren't SQLite databases
+/// (created by `echo > file.db` or `touch file.db`) trigger SQLITE_NOTADB.
+/// These should be silently uploaded without checkpoint.
+fn is_not_db(e: &rusqlite::Error) -> bool {
+    matches!(
+        e,
+        rusqlite::Error::SqliteFailure(
+            rusqlite::ffi::Error {
+                code: rusqlite::ffi::ErrorCode::NotADatabase,
                 ..
             },
             _,
