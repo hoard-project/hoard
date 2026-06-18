@@ -28,6 +28,11 @@ secret_key = "${S3_SECRET_KEY}"        # set via env var or Vault
 interval_secs = 21600                  # 6 hours
 ttl_days      = 30                     # delete S3 objects older than 30 days
 
+[resilience]
+pending_db        = "/var/lib/hoard/pending.db"     # SQLite DB for crash-safe pending set
+max_upload_retries = 5                              # exponential backoff: 1s, 2s, 4s, 8s, 16s
+dead_letter_dir   = "/var/lib/hoard/dead-letter"    # failed uploads after max retries
+
 [filter]
 extensions = ["db", "sqlite", "sqlite3", "wal", "log", "json", "csv", "parquet"]
 exclude    = ["*.tmp", "*.journal"]

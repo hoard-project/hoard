@@ -67,6 +67,11 @@ prefix     = "{{ env "S3_PREFIX" }}"
 interval_secs = 21600
 ttl_days      = 30
 
+[resilience]
+pending_db        = "/var/lib/hoard/pending.db"
+max_upload_retries = 5
+dead_letter_dir   = "/var/lib/hoard/dead-letter"
+
 [filter]
 extensions = ["db", "sqlite", "sqlite3", "wal", "log", "json", "csv"]
 exclude    = ["*.tmp", "*.journal"]
