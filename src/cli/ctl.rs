@@ -74,28 +74,29 @@ pub async fn run() -> Result<()> {
                 })?;
 
             stream.writable().await?;
-            use tokio::io::AsyncWriteExt;
-            let (mut rx, mut tx) = stream.into_split();
+            use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
+            let (rx, mut tx) = stream.into_split();
             tx.write_all(b"flush\n").await?;
             tx.shutdown().await?;
 
             let mut response = String::new();
-            use tokio::io::AsyncReadExt;
-            rx.read_to_string(&mut response).await?;
-            println!("{response}");
+            BufReader::new(rx).read_line(&mut response).await?;
+            print!("{response}");
         }
         CtlCommand::Status { service } => {
             let sock = PathBuf::from(format!("/run/hoard/{service}.sock"));
-            let mut stream = tokio::net::UnixStream::connect(&sock)
+            let stream = tokio::net::UnixStream::connect(&sock)
                 .await
                 .with_context(|| format!("failed to connect to {}", sock.display()))?;
 
-            use tokio::io::{AsyncReadExt, AsyncWriteExt};
-            stream.write_all(b"status\n").await?;
+            use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+            let (rx, mut tx) = stream.into_split();
+            tx.write_all(b"status\n").await?;
+            tx.shutdown().await?;
 
             let mut response = String::new();
-            stream.read_to_string(&mut response).await?;
-            println!("{response}");
+            BufReader::new(rx).read_line(&mut response).await?;
+            print!("{response}");
         }
         CtlCommand::Restore {
             key,

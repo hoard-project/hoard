@@ -79,25 +79,3 @@ impl TriggerSource {
         rx
     }
 }
-
-/// GC key prefix, determined by deployment mode.
-///
-/// Exhaustive enum — the GC code must handle both modes.
-pub enum GcPrefix {
-    /// Standalone: "backup/<service>/"
-    Standalone { service: String },
-    /// Nomad: "sqlite-service/alloc_"
-    Nomad,
-}
-
-impl GcPrefix {
-    /// Return the S3 key prefix for GC scanning.
-    ///
-    /// This is the **single source of truth** for GC prefix format.
-    pub fn as_str(&self) -> String {
-        match self {
-            GcPrefix::Standalone { service } => format!("backup/{service}/"),
-            GcPrefix::Nomad => "sqlite-service/alloc_".to_string(),
-        }
-    }
-}

@@ -7,8 +7,8 @@
 [daemon]
 mode = "standalone"                   # "standalone" or "nomad"
 service = "myapp"                      # logical service name (standalone)
-# control_socket = "/run/hoard/myapp.sock"  # default: /run/hoard/<service>.sock
-# metrics_addr = "0.0.0.0:9150"            # Prometheus metrics endpoint
+control_socket = "/run/hoard/myapp.sock"  # default: /run/hoard/<service>.sock
+metrics_addr = "0.0.0.0:9150"            # Prometheus metrics endpoint
 
 [watch]
 path     = "/var/lib/hoard/volumes"    # root directory to watch recursively

@@ -75,13 +75,39 @@ impl EbpfAttached {
                     crate::trigger::standalone::bind_control_socket(&self.config.control_socket)
                         .await?;
                 let flush_tx2 = flush_tx.clone();
+                let version = env!("CARGO_PKG_VERSION").to_string();
+                let service = self.config.service.clone();
                 tokio::spawn(async move {
                     loop {
-                        if let Ok(Some(stream)) =
+                        if let Ok(Some(mut stream)) =
                             crate::trigger::standalone::accept_control(&sock).await
                         {
-                            let _ = flush_tx2.send(()).await;
-                            drop(stream);
+                            let tx = flush_tx2.clone();
+                            let ver = version.clone();
+                            let svc = service.clone();
+                            tokio::spawn(async move {
+                                let mut line = String::new();
+                                use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+                                let (rx, mut tx_w) = stream.split();
+                                let mut reader = BufReader::new(rx);
+                                if reader.read_line(&mut line).await.is_ok() {
+                                    match crate::trigger::standalone::parse_command(&line) {
+                                        Some(crate::trigger::standalone::ControlCommand::Flush) => {
+                                            let _ = tx.send(()).await;
+                                            let _ = tx_w.write_all(b"ok: flush triggered\n").await;
+                                        }
+                                        Some(crate::trigger::standalone::ControlCommand::Status) => {
+                                            let status = format!(
+                                                "{{\"version\":\"{ver}\",\"mode\":\"standalone\",\"service\":\"{svc}\"}}\n"
+                                            );
+                                            let _ = tx_w.write_all(status.as_bytes()).await;
+                                        }
+                                        None => {
+                                            let _ = tx_w.write_all(b"error: unknown command\n").await;
+                                        }
+                                    }
+                                }
+                            });
                         }
                     }
                 });
@@ -165,10 +191,7 @@ impl HoardReady {
         let filter = Arc::new(Mutex::new(self.filter));
         let gc_state = Arc::new(Mutex::new(GcReloadState {
             ttl: Duration::from_secs(u64::from(self.config.gc_ttl_days) * 86400),
-            prefix: match self.config.mode {
-                Mode::Standalone => self.config.service.clone(),
-                Mode::Nomad => String::from("nomad"),
-            },
+            prefix: self.config.s3_prefix.clone(),
         }));
 
         let mut gc_timer = tokio::time::interval(gc_interval);
@@ -193,7 +216,6 @@ impl HoardReady {
             .context("failed to register SIGHUP handler")?;
 
         // ── Start Prometheus metrics server ──
-        #[cfg(feature = "prometheus")]
         {
             let metrics_addr = config.metrics_addr.clone();
             let tx = flush_tx.clone();
@@ -202,6 +224,7 @@ impl HoardReady {
                     tracing::error!(%e, "metrics server failed");
                 }
             });
+            tracing::info!(addr = %metrics_addr, "Prometheus metrics endpoint started");
         }
 
         // Periodic drain: in Nomad mode every 10 min via SSE triggers,
