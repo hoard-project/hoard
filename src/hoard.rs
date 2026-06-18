@@ -467,6 +467,10 @@ async fn reload_config(
 
 impl HoardReady {
     /// Debounce → queue for upload. Caller has already resolved path + passed filter.
+    ///
+    /// If the file is stable (100ms dual-stat check passes), log at INFO with size.
+    /// If still changing, still add to pending — the periodic drain will upload
+    /// it on the next cycle when it may have settled.
     async fn debounce_and_queue(
         path: &std::path::Path,
         pending: &Arc<Mutex<HashSet<std::path::PathBuf>>>,
@@ -479,11 +483,14 @@ impl HoardReady {
                     size = stable.size,
                     "file stable, queuing for upload"
                 );
-                // Queue for the next flush/drain trigger
                 pending.lock().await.insert(path.to_path_buf());
             }
             Ok(None) => {
-                tracing::debug!(path = %path.display(), "file still changing, skipped");
+                // File still changing — queue anyway.  The periodic drain
+                // (every 30s in standalone, 10min in Nomad) will upload
+                // it when the file has likely settled.
+                tracing::debug!(path = %path.display(), "file still changing, queued for deferred upload");
+                pending.lock().await.insert(path.to_path_buf());
             }
             Err(e) => {
                 tracing::error!(path = %path.display(), %e, "debounce failed");
