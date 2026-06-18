@@ -55,7 +55,9 @@ impl BpfProgram {
             if p.exists() {
                 match std::fs::remove_dir_all(p) {
                     Ok(()) => tracing::info!(path = %dir, "cleaned stale BPF pin directory"),
-                    Err(e) => tracing::warn!(path = %dir, %e, "failed to clean stale BPF pin directory"),
+                    Err(e) => {
+                        tracing::warn!(path = %dir, %e, "failed to clean stale BPF pin directory")
+                    }
                 }
             }
         }
