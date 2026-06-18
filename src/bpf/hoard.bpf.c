@@ -1,6 +1,8 @@
-// Hoard eBPF v6 — multi-hook: vfs_write + __generic_file_write_iter
-// Covers pwrite64 (SQLite) via vfs_write and write()/dd via __generic_file_write_iter.
-// __generic_file_write_iter is the common buffered-write entry for ext4/xfs/tmpfs.
+// Hoard eBPF v8 — dual-hook: vfs_write + generic_perform_write
+// vfs_write covers pwrite64 (SQLite primary path).
+// generic_perform_write covers write()/dd/echo on ext4/xfs/tmpfs (kernel 6.x).
+// generic_perform_write IS called during buffered writes on all major filesystems,
+// unlike __generic_file_write_iter which may be inlined away on newer kernels.
 
 #include "vmlinux.h"
 
@@ -24,6 +26,7 @@ struct {
     __uint(max_entries, 128 * 1024);
 } events SEC(".maps");
 
+// Diagnostic counter (per-CPU)
 struct {
     __uint(type, BPF_MAP_TYPE_PERCPU_ARRAY);
     __uint(max_entries, 1);
@@ -42,12 +45,18 @@ struct {
 
 #define DEDUP_NS (1ULL * 1000 * 1000)
 
+static __always_inline void inc_diag(void) {
+    __u32 k = 0;
+    __u64 *c = bpf_map_lookup_elem(&diag, &k);
+    if (c) __sync_fetch_and_add(c, 1);
+}
+
 static __always_inline void maybe_emit_from_file(struct file *file)
 {
     if (!file) return;
     struct inode *inode = file->f_inode;
     if (!inode) return;
-    if ((inode->i_mode & 00170000) != 0100000) return;
+    if ((inode->i_mode & 00170000) != 0100000) return; // S_ISREG
     struct super_block *sb = inode->i_sb;
     if (!sb) return;
     struct dev_ino key = {};
@@ -66,13 +75,8 @@ static __always_inline void maybe_emit_from_file(struct file *file)
     bpf_ringbuf_submit(e, 0);
 }
 
-static __always_inline void inc_diag(void) {
-    __u32 k = 0;
-    __u64 *c = bpf_map_lookup_elem(&diag, &k);
-    if (c) __sync_fetch_and_add(c, 1);
-}
-
-// Hook 1: vfs_write — captures pwrite64 (SQLite primary path)
+// Hook 1: vfs_write — ctx[0] = struct file *
+// Captures pwrite64 (SQLite), covers ALL write syscalls.
 SEC("fentry/vfs_write")
 int on_vfs_write(void *ctx) {
     inc_diag();
@@ -80,12 +84,12 @@ int on_vfs_write(void *ctx) {
     return 0;
 }
 
-// Hook 2: __generic_file_write_iter — captures write() on ext4/xfs/tmpfs
-//         (__generic_file_write_iter is the buffered write path used by all
-//          major filesystems; ext4_file_write_iter is often inlined/absent)
-//         First arg is struct kiocb *; file = iocb->ki_filp.
-SEC("fentry/__generic_file_write_iter")
-int on_generic_file_write_iter(void *ctx) {
+// Hook 2: generic_perform_write — ctx[0] = struct kiocb *
+// Captures write()/dd/echo on ext4/xfs/tmpfs on kernels where
+// __generic_file_write_iter is inlined away.
+// First arg is struct kiocb *; file = iocb->ki_filp.
+SEC("fentry/generic_perform_write")
+int on_generic_perform_write(void *ctx) {
     inc_diag();
     struct kiocb *iocb = (struct kiocb *)((unsigned long *)ctx)[0];
     if (!iocb) return 0;

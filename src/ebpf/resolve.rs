@@ -76,6 +76,11 @@ impl InodeCache {
         self.inner.write().await.clear();
     }
 
+    /// Pre-populate a cache entry (used by initial scan).
+    pub async fn insert(&self, dev: u64, ino: u64, path: PathBuf) {
+        self.inner.write().await.insert((dev, ino), path);
+    }
+
     /// Remove a specific entry (call after unlinking a file).
     pub async fn invalidate(&self, dev: u64, ino: u64) {
         self.inner.write().await.remove(&(dev, ino));

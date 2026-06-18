@@ -109,6 +109,25 @@ impl EbpfAttached {
             &self.config.watch_excludes,
         )
         .context("invalid watch pattern")?;
+
+        let inode_cache = Arc::new(InodeCache::new());
+
+        // ── Initial scan: baseline upload of all matching files ──
+        {
+            let scan_result = run_initial_scan(
+                &self.config.watch_path,
+                &filter,
+                &s3,
+                &self.config.s3_prefix,
+                &inode_cache,
+            )
+            .await;
+            match scan_result {
+                Ok(stats) => tracing::info!(?stats, "initial scan complete"),
+                Err(e) => tracing::error!(%e, "initial scan failed (non-fatal)"),
+            }
+        }
+
         tracing::info!(mode = ?self.config.mode, "Hoard ready");
         Ok(HoardReady {
             ebpf: self.ebpf,
@@ -116,7 +135,7 @@ impl EbpfAttached {
             trigger,
             config: self.config,
             filter,
-            inode_cache: Arc::new(InodeCache::new()),
+            inode_cache,
         })
     }
 }
@@ -193,6 +212,11 @@ impl HoardReady {
         };
         let mut periodic_drain = tokio::time::interval(drain_interval);
         periodic_drain.tick().await; // skip first immediate tick
+
+        // Periodic scan: rediscover files created but never written to
+        // (Litestream-style: pick up new databases in subdirectories).
+        let mut periodic_scan = tokio::time::interval(Duration::from_secs(1800)); // 30 min
+        periodic_scan.tick().await; // skip first — initial scan already did it
         let mut trigger_events = self.trigger.into_channel();
 
         // BPF events channel: (dev, ino) pairs from the kernel
@@ -364,6 +388,22 @@ impl HoardReady {
                     match reload_config(&config, &filter, &gc_state, &mut gc_timer).await {
                         Ok(()) => tracing::info!("config reloaded successfully"),
                         Err(e) => tracing::error!(%e, "config reload failed"),
+                    }
+                }
+
+                // ── Periodic scan: rediscover untouched files ──
+                _ = periodic_scan.tick() => {
+                    tracing::info!("periodic scan timer fired");
+                    let scan_filter = filter.lock().await;
+                    match run_initial_scan(
+                        &watch_root,
+                        &scan_filter,
+                        &s3,
+                        &s3_prefix,
+                        &inode_cache,
+                    ).await {
+                        Ok(stats) => tracing::info!(?stats, "periodic scan complete"),
+                        Err(e) => tracing::error!(%e, "periodic scan failed"),
                     }
                 }
             }
@@ -586,4 +626,66 @@ impl HoardReady {
             }
         }
     }
+}
+
+/// Scan watch_root recursively, upload matching files, and fill the inode cache.
+///
+/// Litestream-style: discovers files at any depth under watch_root.
+/// Existing files get a baseline upload; the InodeCache is populated
+/// so subsequent BPF events resolve instantly (O(1)).
+async fn run_initial_scan(
+    watch_root: &std::path::Path,
+    filter: &FileFilter,
+    s3: &VerifiedS3Backend,
+    s3_prefix: &str,
+    inode_cache: &std::sync::Arc<InodeCache>,
+) -> Result<ScanStats> {
+    let mut stats = ScanStats::default();
+    let mut dirs = vec![watch_root.to_path_buf()];
+
+    while let Some(dir) = dirs.pop() {
+        let entries = match tokio::fs::read_dir(&dir).await {
+            Ok(e) => e,
+            Err(_) => continue,
+        };
+        let mut entries = tokio_stream::wrappers::ReadDirStream::new(entries);
+
+        while let Some(entry) = tokio_stream::StreamExt::next(&mut entries).await {
+            let entry = match entry {
+                Ok(e) => e,
+                Err(_) => continue,
+            };
+            let path = entry.path();
+
+            let meta = match tokio::fs::metadata(&path).await {
+                Ok(m) => m,
+                Err(_) => continue,
+            };
+
+            if meta.is_dir() && !meta.is_symlink() {
+                dirs.push(path);
+            } else if meta.is_file() && filter.should_monitor(&path) {
+                stats.found += 1;
+
+                // Fill cache
+                use std::os::unix::fs::MetadataExt;
+                let dev = meta.dev();
+                let ino = meta.ino();
+                inode_cache.insert(dev, ino, path.clone()).await;
+
+                // Baseline upload
+                HoardReady::upload_file(s3, &path, watch_root, s3_prefix).await;
+                stats.uploaded += 1;
+            }
+        }
+    }
+
+    Ok(stats)
+}
+
+/// Statistics from an initial or periodic scan.
+#[derive(Debug, Default, Clone)]
+pub struct ScanStats {
+    pub found: usize,
+    pub uploaded: usize,
 }

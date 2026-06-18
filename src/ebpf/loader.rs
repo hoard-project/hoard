@@ -84,14 +84,15 @@ impl BpfProgram {
         // vfs_write covers tmpfs/nfs/etc; ext4_file_write_iter covers ext4.
         // Both resolve file→inode through their respective function args.
         Self::attach_fentry(&mut bpf, "on_vfs_write", "vfs_write")?;
-        // __generic_file_write_iter may fail if BTF is missing — non-fatal,
-        // falls back to vfs_write-only monitoring.
+        // generic_perform_write covers write()/dd/echo on ext4/xfs/tmpfs.
+        // __generic_file_write_iter may be inlined on newer kernels (6.12+).
+        // Falls back to vfs_write-only if BTF is missing — non-fatal.
         if let Err(e) = Self::attach_fentry(
             &mut bpf,
-            "on_generic_file_write_iter",
-            "__generic_file_write_iter",
+            "on_generic_perform_write",
+            "generic_perform_write",
         ) {
-            tracing::warn!(%e, "__generic_file_write_iter fentry not available — fallback to vfs_write only");
+            tracing::warn!(%e, "generic_perform_write fentry not available — fallback to vfs_write only");
         };
 
         // Take ownership of the "events" ring buffer map.

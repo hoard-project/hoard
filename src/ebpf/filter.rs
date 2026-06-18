@@ -59,8 +59,11 @@ impl FileFilter {
     ///
     /// Returns `true` if the file:
     ///   1. Lives under `watch_root`
-    ///   2. Its file name matches at least one include glob
-    ///   3. Its file name matches zero exclude globs
+    ///   2. Its path relative to watch_root matches at least one include glob
+    ///   3. Its path relative to watch_root matches zero exclude globs
+    ///
+    /// Uses `matches_path` for recursive subdirectory matching
+    /// (Litestream-style: `*.db` matches `service-a/prod.db`).
     ///
     /// The path should already be canonicalized by the caller (debounce does this).
     pub fn should_monitor(&self, path: &Path) -> bool {
@@ -69,19 +72,19 @@ impl FileFilter {
             return false;
         }
 
-        // Layer 2: file name check
-        let file_name = match path.file_name().and_then(|n| n.to_str()) {
-            Some(name) => name,
-            None => return false,
+        // Layer 2: relative path match (supports subdirectories)
+        let rel = match path.strip_prefix(&self.watch_root) {
+            Ok(r) => r,
+            Err(_) => return false,
         };
 
         // Must match at least one include pattern
-        if !self.include_globs.iter().any(|pat| pat.matches(file_name)) {
+        if !self.include_globs.iter().any(|pat| pat.matches_path(rel)) {
             return false;
         }
 
         // Must NOT match any exclude pattern
-        if self.exclude_globs.iter().any(|pat| pat.matches(file_name)) {
+        if self.exclude_globs.iter().any(|pat| pat.matches_path(rel)) {
             return false;
         }
 
