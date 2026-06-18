@@ -48,16 +48,39 @@ impl BpfProgram {
     ///
     /// These survive process death (especially SIGKILL) and can
     /// cause ringbuf contention or map-reuse errors on restart.
+    /// Handles both directories and individual pinned files.
     pub fn cleanup_stale() {
-        let stale_dirs = ["/sys/fs/bpf/hoard_maps", "/sys/fs/bpf/hoard"];
-        for dir in &stale_dirs {
-            let p = std::path::Path::new(dir);
-            if p.exists() {
-                match std::fs::remove_dir_all(p) {
-                    Ok(()) => tracing::info!(path = %dir, "cleaned stale BPF pin directory"),
-                    Err(e) => {
-                        tracing::warn!(path = %dir, %e, "failed to clean stale BPF pin directory")
-                    }
+        use std::fs;
+
+        fn remove_any(path: &str) {
+            let p = std::path::Path::new(path);
+            if !p.exists() {
+                return;
+            }
+            let result = if p.is_dir() {
+                fs::remove_dir_all(p)
+            } else {
+                fs::remove_file(p)
+            };
+            match result {
+                Ok(()) => tracing::info!(path, "cleaned stale BPF pin"),
+                Err(e) => tracing::warn!(path, %e, "failed to clean stale BPF pin"),
+            }
+        }
+
+        // Clean known hoard pin paths — both directories and files.
+        let paths = ["/sys/fs/bpf/hoard_maps", "/sys/fs/bpf/hoard"];
+        for path in &paths {
+            remove_any(path);
+        }
+
+        // Also clean any orphan pinnings left by aya's default naming.
+        if let Ok(entries) = fs::read_dir("/sys/fs/bpf") {
+            for entry in entries.flatten() {
+                let name = entry.file_name();
+                let name_str = name.to_string_lossy();
+                if name_str.starts_with("minimal_") {
+                    remove_any(&format!("/sys/fs/bpf/{name_str}"));
                 }
             }
         }
