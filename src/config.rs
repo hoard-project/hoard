@@ -37,6 +37,16 @@ pub struct ConfigFile {
     pub filter: FilterSection,
     #[serde(default)]
     pub daemon: DaemonSection,
+    #[serde(default)]
+    pub resilience: ResilienceSection,
+}
+
+#[derive(Deserialize, Debug, Default, Clone)]
+#[serde(deny_unknown_fields)]
+pub struct ResilienceSection {
+    pub pending_db: Option<String>,
+    pub max_upload_retries: Option<u32>,
+    pub dead_letter_dir: Option<String>,
 }
 
 #[derive(Deserialize, Debug, Default, Clone)]
@@ -169,6 +179,19 @@ pub struct Config {
     #[arg(long, env = "HOARD_GC_TTL_DAYS")]
     pub gc_ttl_days: Option<u32>,
 
+    // ── Resilience ──
+    /// Path to SQLite database for pending-set persistence
+    #[arg(long, env = "HOARD_PENDING_DB")]
+    pub pending_db: Option<String>,
+
+    /// Maximum upload retry attempts per file
+    #[arg(long, env = "HOARD_MAX_UPLOAD_RETRIES")]
+    pub max_upload_retries: Option<u32>,
+
+    /// Directory for dead-letter queue (failed uploads after max retries)
+    #[arg(long, env = "HOARD_DEAD_LETTER_DIR")]
+    pub dead_letter_dir: Option<String>,
+
     // ── Nomad integration ──
     /// Nomad agent address
     #[arg(long, env = "HOARD_NOMAD_ADDR")]
@@ -231,6 +254,12 @@ pub struct ValidatedConfig {
     pub nomad_token: Option<String>,
     pub control_socket: PathBuf,
     pub metrics_addr: String,
+    /// Path to SQLite database for pending-set persistence
+    pub pending_db: PathBuf,
+    /// Maximum upload retry attempts per file
+    pub max_upload_retries: u32,
+    /// Directory for dead-letter queue
+    pub dead_letter_dir: PathBuf,
     /// Path to the TOML config file (if loaded from file), for SIGHUP reload.
     pub config_path: Option<PathBuf>,
 }
@@ -383,6 +412,17 @@ impl Config {
             self.gc_ttl_days = f.gc.ttl_days;
         }
 
+        // Resilience
+        if self.pending_db.is_none() {
+            self.pending_db = f.resilience.pending_db.clone();
+        }
+        if self.max_upload_retries.is_none() {
+            self.max_upload_retries = f.resilience.max_upload_retries;
+        }
+        if self.dead_letter_dir.is_none() {
+            self.dead_letter_dir = f.resilience.dead_letter_dir.clone();
+        }
+
         self
     }
 
@@ -465,6 +505,15 @@ impl Config {
             metrics_addr: self
                 .metrics_addr
                 .unwrap_or_else(|| "127.0.0.1:9150".to_string()),
+            pending_db: self
+                .pending_db
+                .map(PathBuf::from)
+                .unwrap_or_else(|| PathBuf::from("/var/lib/hoard/pending.db")),
+            max_upload_retries: self.max_upload_retries.unwrap_or(5),
+            dead_letter_dir: self
+                .dead_letter_dir
+                .map(PathBuf::from)
+                .unwrap_or_else(|| PathBuf::from("/var/lib/hoard/dead-letter")),
             config_path: self.config_path.clone(),
         })
     }

@@ -14,5 +14,6 @@
 
 pub mod outcome;
 pub mod pipeline;
+pub mod retry;
 
 // Public state tokens — zero-size types that encode upload progress

@@ -107,7 +107,8 @@ pub async fn serve_metrics(
     }
 }
 
-/// HTTP handler: GET /metrics → Prometheus text format; GET/POST /flush → trigger drain.
+/// HTTP handler: GET /metrics → Prometheus text format; GET/POST /flush → trigger drain;
+/// GET /health → JSON health check.
 async fn metrics_handler(
     req: Request<Incoming>,
     flush_tx: Option<mpsc::UnboundedSender<()>>,
@@ -122,6 +123,11 @@ async fn metrics_handler(
                 .body(Full::new(Bytes::from("flush triggered\n")))
                 .expect("failed to build flush response"))
         }
+        (&Method::GET, "/health") => Ok(Response::builder()
+            .status(StatusCode::OK)
+            .header("Content-Type", "application/json")
+            .body(Full::new(Bytes::from(r#"{"status":"ok"}"#)))
+            .expect("failed to build health response")),
         _ => {
             let encoder = prometheus::TextEncoder::new();
             let metric_families = prometheus::gather();

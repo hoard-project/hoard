@@ -16,10 +16,11 @@
 use crate::config::{Mode, ValidatedConfig};
 use crate::ebpf::resolve::InodeCache;
 use crate::ebpf::{BpfProgram, FileFilter};
+use crate::pending::PersistentPending;
 use crate::s3::{S3Backend, VerifiedS3Backend};
 use crate::trigger::TriggerSource;
+use crate::upload::retry::{write_dead_letter, DeadLetter, RetryConfig};
 use anyhow::{Context, Result};
-use std::collections::HashSet;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::Mutex;
@@ -277,7 +278,17 @@ impl HoardReady {
         }
 
         // Set of files pending upload (canonical paths)
-        let pending: Arc<Mutex<HashSet<std::path::PathBuf>>> = Arc::new(Mutex::new(HashSet::new()));
+        // Persistent pending set — survives process restarts
+        let pending_db_path = config.pending_db.clone();
+        let pending: Arc<Mutex<PersistentPending>> = Arc::new(Mutex::new(
+            PersistentPending::open(&pending_db_path)
+                .context("failed to open persistent pending database")?,
+        ));
+        let retry_cfg = RetryConfig {
+            max_attempts: config.max_upload_retries,
+            ..Default::default()
+        };
+        let dead_letter_dir = Arc::new(config.dead_letter_dir.clone());
         let inode_cache = self.inode_cache.clone();
 
         tracing::info!(mode = ?config.mode, watch_root = %watch_root.display(), "entering main event loop");
@@ -312,13 +323,17 @@ impl HoardReady {
                     match trigger {
                         Some(t) => {
                             tracing::info!(trigger_type = t, "trigger fired, draining pending files");
-                            let to_upload: Vec<_> = {
+                            let to_upload = {
                                 let mut guard = pending.lock().await;
-                                let files: Vec<_> = guard.drain().collect();
-                                files
+                                guard.drain()
                             };
                             for path in &to_upload {
-                                Self::upload_file(&s3, path, &watch_root, &s3_prefix).await;
+                                if let Err(e) = Self::upload_file(
+                                    &s3, path, &watch_root, &s3_prefix,
+                                    &retry_cfg, &pending, &dead_letter_dir,
+                                ).await {
+                                    tracing::error!(path = %path.display(), %e, "upload exhausted retries");
+                                }
                             }
                             tracing::info!(count = to_upload.len(), "drain complete");
                         }
@@ -332,13 +347,17 @@ impl HoardReady {
                 // ── HTTP flush trigger ──
                 _ = flush_rx.recv() => {
                     tracing::info!("HTTP flush triggered, draining pending files");
-                    let to_upload: Vec<_> = {
+                    let to_upload = {
                         let mut guard = pending.lock().await;
-                        let files: Vec<_> = guard.drain().collect();
-                        files
+                        guard.drain()
                     };
                     for path in &to_upload {
-                        Self::upload_file(&s3, path, &watch_root, &s3_prefix).await;
+                        if let Err(e) = Self::upload_file(
+                            &s3, path, &watch_root, &s3_prefix,
+                            &retry_cfg, &pending, &dead_letter_dir,
+                        ).await {
+                            tracing::error!(path = %path.display(), %e, "upload exhausted retries");
+                        }
                     }
                     tracing::info!(count = to_upload.len(), "flush drain complete");
                 }
@@ -366,13 +385,17 @@ impl HoardReady {
                 // ── Periodic drain (Nomad mode: every 10 min) ──
                 _ = periodic_drain.tick() => {
                     tracing::info!("periodic drain timer fired");
-                    let to_upload: Vec<_> = {
+                    let to_upload = {
                         let mut guard = pending.lock().await;
-                        let files: Vec<_> = guard.drain().collect();
-                        files
+                        guard.drain()
                     };
                     for path in &to_upload {
-                        Self::upload_file(&s3, path, &watch_root, &s3_prefix).await;
+                        if let Err(e) = Self::upload_file(
+                            &s3, path, &watch_root, &s3_prefix,
+                            &retry_cfg, &pending, &dead_letter_dir,
+                        ).await {
+                            tracing::error!(path = %path.display(), %e, "upload exhausted retries");
+                        }
                     }
                     if !to_upload.is_empty() {
                         tracing::info!(count = to_upload.len(), "periodic drain complete");
@@ -382,13 +405,17 @@ impl HoardReady {
                 // ── SIGTERM / SIGINT → graceful drain and exit ──
                 _ = sigterm.recv() => {
                     tracing::warn!("SIGTERM received, draining pending files before exit");
-                    let to_upload: Vec<_> = {
+                    let to_upload = {
                         let mut guard = pending.lock().await;
-                        let files: Vec<_> = guard.drain().collect();
-                        files
+                        guard.drain()
                     };
                     for path in &to_upload {
-                        Self::upload_file(&s3, path, &watch_root, &s3_prefix).await;
+                        if let Err(e) = Self::upload_file(
+                            &s3, path, &watch_root, &s3_prefix,
+                            &retry_cfg, &pending, &dead_letter_dir,
+                        ).await {
+                            tracing::error!(path = %path.display(), %e, "upload exhausted retries");
+                        }
                     }
                     tracing::warn!(count = to_upload.len(), "SIGTERM drain complete, exiting");
                     break;
@@ -396,13 +423,17 @@ impl HoardReady {
 
                 _ = sigint.recv() => {
                     tracing::warn!("SIGINT received, draining pending files before exit");
-                    let to_upload: Vec<_> = {
+                    let to_upload = {
                         let mut guard = pending.lock().await;
-                        let files: Vec<_> = guard.drain().collect();
-                        files
+                        guard.drain()
                     };
                     for path in &to_upload {
-                        Self::upload_file(&s3, path, &watch_root, &s3_prefix).await;
+                        if let Err(e) = Self::upload_file(
+                            &s3, path, &watch_root, &s3_prefix,
+                            &retry_cfg, &pending, &dead_letter_dir,
+                        ).await {
+                            tracing::error!(path = %path.display(), %e, "upload exhausted retries");
+                        }
                     }
                     tracing::warn!(count = to_upload.len(), "SIGINT drain complete, exiting");
                     break;
@@ -495,10 +526,7 @@ impl HoardReady {
     /// If the file is stable (100ms dual-stat check passes), log at INFO with size.
     /// If still changing, still add to pending — the periodic drain will upload
     /// it on the next cycle when it may have settled.
-    async fn debounce_and_queue(
-        path: &std::path::Path,
-        pending: &Arc<Mutex<HashSet<std::path::PathBuf>>>,
-    ) {
+    async fn debounce_and_queue(path: &std::path::Path, pending: &Arc<Mutex<PersistentPending>>) {
         let debouncer = crate::ebpf::debounce::Debouncer::new();
         match debouncer.check_stable(path) {
             Ok(Some(stable)) => {
@@ -507,14 +535,14 @@ impl HoardReady {
                     size = stable.size,
                     "file stable, queuing for upload"
                 );
-                pending.lock().await.insert(path.to_path_buf());
+                pending.lock().await.insert(&stable.path);
             }
             Ok(None) => {
                 // File still changing — queue anyway.  The periodic drain
                 // (every 30s in standalone, 10min in Nomad) will upload
                 // it when the file has likely settled.
                 tracing::debug!(path = %path.display(), "file still changing, queued for deferred upload");
-                pending.lock().await.insert(path.to_path_buf());
+                pending.lock().await.insert(path);
             }
             Err(e) => {
                 tracing::error!(path = %path.display(), %e, "debounce failed");
@@ -522,16 +550,71 @@ impl HoardReady {
         }
     }
 
-    /// Upload a single file through the full pipeline.
+    /// Upload a single file through the full pipeline with retry+backoff.
     ///
-    /// The S3 object key is built as `{prefix}/{relative_path}/{file_name}`
-    /// where `relative_path` is `path` stripped of `watch_root`.
+    /// On failure, retries up to `retry_cfg.max_attempts` with exponential
+    /// backoff. Files exceeding max attempts are moved to the dead-letter queue.
+    /// On success, removes the file from the pending set.
+    ///
+    /// Returns `Ok(())` on success, `Err(last_error)` if all retries exhausted.
     async fn upload_file(
+        s3: &VerifiedS3Backend,
+        path: &std::path::Path,
+        watch_root: &std::path::Path,
+        prefix: &str,
+        retry_cfg: &RetryConfig,
+        pending: &Arc<Mutex<PersistentPending>>,
+        dead_letter_dir: &std::path::Path,
+    ) -> Result<(), String> {
+        let mut last_error = String::new();
+
+        for attempt in 1..=retry_cfg.max_attempts {
+            let result = Self::upload_file_once(s3, path, watch_root, prefix).await;
+
+            match result {
+                Ok(()) => {
+                    // Remove from pending set — file is safely in S3
+                    pending.lock().await.remove(path);
+                    return Ok(());
+                }
+                Err(e) => {
+                    last_error = e;
+                    if attempt < retry_cfg.max_attempts {
+                        let delay = crate::upload::retry::backoff_delay(retry_cfg, attempt);
+                        tracing::warn!(
+                            path = %path.display(),
+                            attempt,
+                            max = retry_cfg.max_attempts,
+                            delay_ms = delay.as_millis(),
+                            error = %last_error,
+                            "upload failed, retrying after backoff"
+                        );
+                        tokio::time::sleep(delay).await;
+                    }
+                }
+            }
+        }
+
+        // All retries exhausted — move to dead-letter queue
+        let entry = DeadLetter {
+            original_path: path.to_path_buf(),
+            attempts: retry_cfg.max_attempts,
+            last_error: last_error.clone(),
+        };
+        if let Err(e) = write_dead_letter(dead_letter_dir, &entry) {
+            tracing::error!(%e, path = %path.display(), "failed to write dead-letter entry");
+        }
+        // Keep in pending set — operator can re-trigger later
+        Err(last_error)
+    }
+
+    /// Single upload attempt (no retry). Returns Ok(()) or Err(description).
+    async fn upload_file_once(
         _s3: &VerifiedS3Backend,
         path: &std::path::Path,
         watch_root: &std::path::Path,
         prefix: &str,
-    ) {
+    ) -> Result<(), String> {
         crate::metrics::UPLOAD_TOTAL.inc();
 
         let file_name = path
@@ -557,94 +640,62 @@ impl HoardReady {
         };
 
         // Open and stat the file
-        let std_file = match std::fs::File::open(path) {
-            Ok(f) => f,
-            Err(e) => {
-                tracing::error!(path = %path.display(), %e, "failed to open file for upload");
-                crate::metrics::UPLOAD_FAILURES_TOTAL.inc();
-                return;
-            }
-        };
-        let file_size = match std_file.metadata() {
-            Ok(m) => m.len(),
-            Err(e) => {
-                tracing::error!(path = %path.display(), %e, "failed to stat file");
-                crate::metrics::UPLOAD_FAILURES_TOTAL.inc();
-                return;
-            }
-        };
+        let std_file = std::fs::File::open(path)
+            .map_err(|e| format!("failed to open {}: {e}", path.display()))?;
+        let file_size = std_file
+            .metadata()
+            .map_err(|e| format!("failed to stat {}: {e}", path.display()))?;
+        let file_size = file_size.len();
 
         let file_fd = crate::fd::FileFd::from_file(std_file);
 
-        // Stage 1: WAL checkpoint (sync, blocks briefly; nop for non-SQLite)
-        let checkpointed = match crate::upload::pipeline::UploadPipeline::new(
+        // Stage 1: WAL checkpoint
+        let checkpointed = crate::upload::pipeline::UploadPipeline::new(
             file_fd,
             file_size,
             s3_key.clone(),
             path.to_path_buf(),
         )
         .wal_checkpoint()
-        {
-            Ok(p) => p,
-            Err(e) => {
-                tracing::error!(s3_key, %e, "WAL checkpoint failed");
-                crate::metrics::UPLOAD_FAILURES_TOTAL.inc();
-                return;
-            }
-        };
+        .map_err(|e| format!("WAL checkpoint: {e}"))?;
 
-        // Stage 2: Presign (async)
-        let presigned = match checkpointed.presign(_s3).await {
-            Ok(p) => p,
-            Err(e) => {
-                tracing::error!(s3_key, %e, "S3 presign failed");
-                crate::metrics::UPLOAD_FAILURES_TOTAL.inc();
-                return;
-            }
-        };
+        // Stage 2: Presign
+        let presigned = checkpointed
+            .presign(_s3)
+            .await
+            .map_err(|e| format!("S3 presign: {e}"))?;
 
-        // Stage 3: Connect (type-state pass-through; actual connection in write_header)
-        let connected = match presigned.connect("localhost", 9000).await {
-            Ok(p) => p,
-            Err(e) => {
-                tracing::error!(s3_key, %e, "TCP connect failed");
-                crate::metrics::UPLOAD_FAILURES_TOTAL.inc();
-                return;
-            }
-        };
+        // Stage 3: Connect
+        let connected = presigned
+            .connect("localhost", 9000)
+            .await
+            .map_err(|e| format!("TCP connect: {e}"))?;
 
-        // Stage 4: Write header + sendfile body (sync, use kTLS if available)
-        let (header_written, sock) = match connected.write_header(None) {
-            Ok(pair) => pair,
-            Err(e) => {
-                tracing::error!(s3_key, %e, "header write failed");
-                crate::metrics::UPLOAD_FAILURES_TOTAL.inc();
-                return;
-            }
-        };
+        // Stage 4: Write header + sendfile body
+        let (header_written, sock) = connected
+            .write_header(None)
+            .map_err(|e| format!("header write: {e}"))?;
 
-        let body_sent = match header_written.sendfile_body(&sock) {
-            Ok(p) => p,
-            Err(e) => {
-                tracing::error!(s3_key, %e, "sendfile failed");
-                crate::metrics::UPLOAD_FAILURES_TOTAL.inc();
-                return;
-            }
-        };
+        let body_sent = header_written
+            .sendfile_body(&sock)
+            .map_err(|e| format!("sendfile: {e}"))?;
 
         // Stage 5: Shutdown + read response
         match body_sent.shutdown_and_read(sock) {
             Ok(outcome) if outcome.is_success() => {
                 tracing::info!(s3_key, status = outcome.status_code, etag = ?outcome.etag(), "upload succeeded");
                 crate::metrics::UPLOAD_BYTES_TOTAL.inc_by(file_size as f64);
+                Ok(())
             }
             Ok(outcome) => {
-                tracing::error!(s3_key, status = outcome.status_code, error = ?outcome.error(), "upload failed");
+                let msg = format!("HTTP {}", outcome.status_code);
                 crate::metrics::UPLOAD_FAILURES_TOTAL.inc();
+                Err(msg)
             }
             Err(e) => {
-                tracing::error!(s3_key, %e, "shutdown/read failed");
+                let msg = format!("shutdown/read: {e}");
                 crate::metrics::UPLOAD_FAILURES_TOTAL.inc();
+                Err(msg)
             }
         }
     }
