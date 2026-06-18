@@ -691,6 +691,21 @@ impl HoardReady {
         match body_sent.shutdown_and_read(sock) {
             Ok(outcome) if outcome.is_success() => {
                 tracing::info!(s3_key, status = outcome.status_code, etag = ?outcome.etag(), "upload succeeded");
+
+                // Stage 6: Verify integrity — local MD5 vs S3 ETag
+                if let Some(etag) = outcome.etag() {
+                    if let Err(e) = crate::verify::verify_etag(path, etag) {
+                        tracing::error!(s3_key, %e, "ETag mismatch — possible data corruption");
+                        crate::metrics::ETAG_MISMATCH_TOTAL.inc();
+                        return Err(format!("ETag verification failed: {e}"));
+                    }
+                } else {
+                    tracing::warn!(
+                        s3_key,
+                        "S3 response missing ETag — skipping integrity check"
+                    );
+                }
+
                 crate::metrics::UPLOAD_BYTES_TOTAL.inc_by(file_size as f64);
                 Ok(())
             }

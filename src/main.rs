@@ -34,6 +34,7 @@ mod pending;
 mod s3;
 mod trigger;
 mod upload;
+mod verify;
 
 mod metrics;
 

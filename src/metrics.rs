@@ -77,6 +77,12 @@ lazy_static! {
         "hoard_upload_failures_total",
         "Total upload failures"
     ).expect("duplicate metric: hoard_upload_failures_total");
+
+    /// ETag mismatches (silent data corruption detected).
+    pub static ref ETAG_MISMATCH_TOTAL: Counter = register_counter!(
+        "hoard_etag_mismatch_total",
+        "Total ETag mismatches (local MD5 ≠ S3 ETag)"
+    ).expect("duplicate metric: hoard_etag_mismatch_total");
 }
 
 // ── Metrics server ─────────────────────────────────────────────────
