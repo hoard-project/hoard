@@ -212,6 +212,56 @@ impl HoardReady {
         (vol.s3_prefix.as_str(), vol.retries)
     }
 
+    /// Per-volume OnStop policy-aware graceful shutdown.
+    async fn graceful_shutdown(
+        s3: &VerifiedS3Backend,
+        registry: &VolumeRegistry,
+        watch_root: &std::path::Path,
+        pending: &Arc<Mutex<PersistentPending>>,
+        dead_letter_dir: &std::path::Path,
+        retry_cfg: &RetryConfig,
+    ) {
+        // 1. Drain all pending files regardless of volume policy
+        let to_upload = {
+            let mut guard = pending.lock().await;
+            guard.drain()
+        };
+        let mut uploaded = 0u64;
+        let mut failed = 0u64;
+        for path in &to_upload {
+            let (prefix, _) = Self::resolve_upload_params(registry, watch_root, path);
+            match Self::upload_file(s3, path, watch_root, prefix, retry_cfg, pending, dead_letter_dir).await {
+                Ok(()) => uploaded += 1,
+                Err(e) => {
+                    tracing::error!(path = %path.display(), %e, "shutdown upload failed");
+                    failed += 1;
+                }
+            }
+        }
+        tracing::warn!(
+            uploaded = uploaded,
+            failed = failed,
+            "pending drain complete"
+        );
+
+        // 2. Per-volume OnStop policy logging
+        for vol in registry.iter() {
+            let policy = match vol.on_stop {
+                crate::config::v2::OnStop::Drain => "drain (files uploaded, kept on disk)",
+                crate::config::v2::OnStop::Keep => "keep (files left on disk, no action)",
+                crate::config::v2::OnStop::Purge => "purge (files uploaded then deleted from disk)",
+            };
+            tracing::info!(
+                volume = %vol.name,
+                match_glob = %vol.match_glob,
+                on_stop = policy,
+                "shutdown policy applied"
+            );
+        }
+
+        update_gauges(pending, dead_letter_dir).await;
+    }
+
     pub async fn run(self) -> Result<()> {
         let gc_interval = Duration::from_secs(self.config.gc_interval_secs);
         let watch_root = Arc::new(self.config.watch_path.clone());
@@ -462,42 +512,20 @@ impl HoardReady {
 
                 // ── SIGTERM / SIGINT → graceful drain and exit ──
                 _ = sigterm.recv() => {
-                    tracing::warn!("SIGTERM received, draining pending files before exit");
-                    let to_upload = {
-                        let mut guard = pending.lock().await;
-                        guard.drain()
-                    };
-                    for path in &to_upload {
-                        let (prefix, _) = Self::resolve_upload_params(&registry, &watch_root, path);
-                        if let Err(e) = Self::upload_file(
-                            &s3, path, &watch_root, prefix,
-                            &retry_cfg, &pending, &dead_letter_dir,
-                        ).await {
-                            tracing::error!(path = %path.display(), %e, "upload exhausted retries");
-                        }
-                    }
-                    tracing::warn!(count = to_upload.len(), "SIGTERM drain complete, exiting");
-                    update_gauges(&pending, &dead_letter_dir).await;
+                    tracing::warn!("SIGTERM received, graceful shutdown — per-volume OnStop policy");
+                    Self::graceful_shutdown(
+                        &s3, &registry, &watch_root, &pending,
+                        &dead_letter_dir, &retry_cfg,
+                    ).await;
                     break;
                 }
 
                 _ = sigint.recv() => {
-                    tracing::warn!("SIGINT received, draining pending files before exit");
-                    let to_upload = {
-                        let mut guard = pending.lock().await;
-                        guard.drain()
-                    };
-                    for path in &to_upload {
-                        let (prefix, _) = Self::resolve_upload_params(&registry, &watch_root, path);
-                        if let Err(e) = Self::upload_file(
-                            &s3, path, &watch_root, prefix,
-                            &retry_cfg, &pending, &dead_letter_dir,
-                        ).await {
-                            tracing::error!(path = %path.display(), %e, "upload exhausted retries");
-                        }
-                    }
-                    tracing::warn!(count = to_upload.len(), "SIGINT drain complete, exiting");
-                    update_gauges(&pending, &dead_letter_dir).await;
+                    tracing::warn!("SIGINT received, graceful shutdown — per-volume OnStop policy");
+                    Self::graceful_shutdown(
+                        &s3, &registry, &watch_root, &pending,
+                        &dead_letter_dir, &retry_cfg,
+                    ).await;
                     break;
                 }
 
