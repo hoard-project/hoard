@@ -1,28 +1,20 @@
 job "stress-logs" {
   type = "batch"
   datacenters = ["dc1"]
-  parameterized { payload = "forbidden" }
   group "writers" {
     count = 10
     task "log-writer" {
       driver = "raw_exec"
       config {
         command = "/bin/bash"
-        args = ["-c", <<EOF
-LOG="/var/lib/hoard/volumes/stress-logs/app-${NOMAD_ALLOC_INDEX}.log"
-mkdir -p "$(dirname "$LOG")"
-END=$((SECONDS + 120))
-while [ $SECONDS -lt $END ]; do
-  echo "[$(date -Iseconds)] alloc=${NOMAD_ALLOC_INDEX} status=200 latency=$((RANDOM%50))ms path=/api/v$((RANDOM%10))" >> "$LOG"
-  sleep 1
-done
-echo "log-${NOMAD_ALLOC_INDEX}: done, $(wc -l < "$LOG") lines"
-EOF
+        args = [
+          "-c",
+          "DIR=/var/lib/hoard/volumes/stress-logs\nmkdir -p $DIR\nCNT=0\nEND=$((SECONDS+120))\nwhile [ $SECONDS -lt $END ]; do\n  echo [$(date -Is)] alloc=${NOMAD_ALLOC_INDEX} cnt=$CNT status=200 >> $DIR/access.log\n  CNT=$((CNT+1))\n  sleep $((RANDOM%3+1))\ndone\necho alloc-${NOMAD_ALLOC_INDEX}: $CNT lines"
         ]
       }
       resources {
         cpu    = 20
-        memory = 16
+        memory = 32
       }
     }
   }

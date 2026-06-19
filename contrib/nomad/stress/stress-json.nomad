@@ -1,28 +1,20 @@
 job "stress-json" {
   type = "batch"
   datacenters = ["dc1"]
-  parameterized { payload = "forbidden" }
   group "writer" {
     count = 1
     task "json-writer" {
       driver = "raw_exec"
       config {
         command = "/bin/bash"
-        args = ["-c", <<EOF
-FILE="/var/lib/hoard/volumes/stress-json/state.json"
-mkdir -p "$(dirname "$FILE")"
-END=$((SECONDS + 120))
-while [ $SECONDS -lt $END ]; do
-  printf '{"ts":"%s","random":%d,"uptime":%d}\n' "$(date -Iseconds)" $RANDOM $SECONDS > "$FILE"
-  sleep 2
-done
-echo "json-writer: done"
-EOF
+        args = [
+          "-c",
+          "FILE=/var/lib/hoard/volumes/stress-json/data.json\nmkdir -p $(dirname $FILE)\nCNT=0\nEND=$((SECONDS+120))\nwhile [ $SECONDS -lt $END ]; do\n  cat > $FILE << INEOF\n{\"alloc\": \"${NOMAD_ALLOC_INDEX}\", \"ts\": \"$(date -Is)\", \"cnt\": $CNT}\nINEOF\n  CNT=$((CNT+1))\n  sleep 2\ndone\necho alloc-${NOMAD_ALLOC_INDEX}: $CNT overwrites"
         ]
       }
       resources {
-        cpu    = 20
-        memory = 16
+        cpu    = 50
+        memory = 32
       }
     }
   }
