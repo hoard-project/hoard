@@ -32,9 +32,14 @@ impl VolumeRegistry {
         self.volumes.len()
     }
 
-    /// Iterate over all volumes in priority order.
+    /// Iterate over all volumes in priority order (borrowed).
     pub fn iter(&self) -> impl Iterator<Item = &ResolvedVolume> {
         self.volumes.iter()
+    }
+
+    /// Iterate over all volumes in priority order (owned, for async).
+    pub fn to_vec(&self) -> Vec<ResolvedVolume> {
+        self.volumes.clone()
     }
 
     /// Resolve a file path to its volume config.
@@ -67,6 +72,22 @@ impl VolumeRegistry {
 fn glob_specificity(pattern: &str) -> usize {
     // Count non-wildcard characters as a rough specificity measure.
     pattern.chars().filter(|c| *c != '*' && *c != '?').count()
+}
+
+/// Parse TTL string like "30d", "7d", "365d", "90d" into a Duration.
+pub fn parse_ttl(ttl: &str) -> std::time::Duration {
+    let ttl = ttl.trim();
+    if ttl.ends_with('d') {
+        let days: u64 = ttl[..ttl.len()-1].parse().unwrap_or(30);
+        std::time::Duration::from_secs(days * 86400)
+    } else if ttl.ends_with('h') {
+        let hours: u64 = ttl[..ttl.len()-1].parse().unwrap_or(24);
+        std::time::Duration::from_secs(hours * 3600)
+    } else {
+        // Fallback: treat as raw seconds
+        let secs: u64 = ttl.parse().unwrap_or(30 * 86400);
+        std::time::Duration::from_secs(secs)
+    }
 }
 
 /// Simple glob matching supporting ** and *.
@@ -230,5 +251,27 @@ mod tests {
     fn extension_glob() {
         assert!(matches_glob("*.log", "app.log"));
         assert!(!matches_glob("*.log", "app.json"));
+    }
+}
+
+mod tests_ttl {
+    use super::parse_ttl;
+
+    #[test]
+    fn parse_days() {
+        assert_eq!(parse_ttl("30d"), std::time::Duration::from_secs(30 * 86400));
+        assert_eq!(parse_ttl("7d"), std::time::Duration::from_secs(7 * 86400));
+        assert_eq!(parse_ttl("365d"), std::time::Duration::from_secs(365 * 86400));
+    }
+
+    #[test]
+    fn parse_hours() {
+        assert_eq!(parse_ttl("24h"), std::time::Duration::from_secs(24 * 3600));
+    }
+
+    #[test]
+    fn parse_default() {
+        let dur = parse_ttl("30d");
+        assert_eq!(dur.as_secs(), 30 * 86400);
     }
 }

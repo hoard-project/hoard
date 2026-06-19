@@ -398,21 +398,25 @@ impl HoardReady {
 
                 // ── GC timer ──
                 _ = gc_timer.tick() => {
-                    let (prefix, ttl) = {
-                        let gs = gc_state.lock().await;
-                        (gs.prefix.clone(), gs.ttl)
-                    }; // lock dropped before await — prevents SIGHUP deadlock
                     tracing::info!("GC timer fired");
-                    match crate::s3::gc::gc_cycle(&s3, &prefix, ttl).await {
-                        Ok(stats) => {
-                            tracing::info!(?stats, "GC cycle complete");
-                            {
+                    let volumes = registry.to_vec();
+                    for vol in &volumes {
+                        let ttl = crate::config::registry::parse_ttl(&vol.ttl);
+                        tracing::info!(
+                            volume = %vol.name,
+                            prefix = %vol.s3_prefix,
+                            ttl_secs = ttl.as_secs(),
+                            "GC: scanning volume"
+                        );
+                        match crate::s3::gc::gc_cycle_mc("guser", &s3.bucket_name(), &vol.s3_prefix, ttl).await {
+                            Ok(stats) => {
+                                tracing::info!(?stats, volume = %vol.name, "GC cycle complete");
                                 crate::metrics::GC_CYCLES_TOTAL.inc();
                                 crate::metrics::GC_DELETED_TOTAL.inc_by(stats.deleted as f64);
                                 crate::metrics::GC_ERRORS_TOTAL.inc_by(stats.errors as f64);
                             }
+                            Err(e) => tracing::error!(%e, volume = %vol.name, "GC cycle failed"),
                         }
-                        Err(e) => tracing::error!(%e, "GC cycle failed"),
                     }
                 }
 
