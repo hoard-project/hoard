@@ -209,12 +209,82 @@ pub struct ResolvedVolume {
     pub s3_prefix: String,
     pub ttl: String,
     pub retries: u32,
+    /// Allowed file extensions (e.g. ["db", "wal", "sqlite"]).
+    /// `["*"]` means all extensions.
     pub extensions: Vec<String>,
+    /// Glob patterns to exclude (e.g. ["*.tmp", "*.journal"]).
     pub exclude: Vec<String>,
     pub compression: Option<String>,
     pub encryption: bool,
     pub on_stop: OnStop,
     pub on_delete: OnDelete,
+}
+
+impl ResolvedVolume {
+    /// Check if a file path should be monitored by this volume.
+    ///
+    /// Returns `false` if:
+    /// - The file extension does not match any of `self.extensions`
+    ///   (unless extensions contains `"*"`)
+    /// - The file name matches any `self.exclude` glob
+    pub fn should_monitor(&self, path: &std::path::Path) -> bool {
+        // Check extensions filter
+        if !self.extensions.is_empty() && !self.extensions.iter().any(|e| e == "*") {
+            let ext = path.extension()
+                .and_then(|e| e.to_str())
+                .unwrap_or("");
+            if !self.extensions.iter().any(|allowed| allowed == ext) {
+                tracing::debug!(
+                    path = %path.display(),
+                    ext = ext,
+                    allowed = ?self.extensions,
+                    volume = %self.name,
+                    "BPF: extension not allowed by volume filter"
+                );
+                return false;
+            }
+        }
+
+        // Check exclude patterns
+        if !self.exclude.is_empty() {
+            let filename = path.file_name()
+                .and_then(|f| f.to_str())
+                .unwrap_or("");
+            for pattern in &self.exclude {
+                if simple_glob_match(pattern, filename) {
+                    tracing::debug!(
+                        path = %path.display(),
+                        pattern = pattern,
+                        volume = %self.name,
+                        "BPF: file excluded by volume pattern"
+                    );
+                    return false;
+                }
+            }
+        }
+
+        true
+    }
+}
+
+/// Simple glob match for filenames (single segment, no `/`).
+/// `*` matches any sequence of characters.
+fn simple_glob_match(pattern: &str, filename: &str) -> bool {
+    if pattern == "*" {
+        return true;
+    }
+    if !pattern.contains('*') {
+        return pattern == filename;
+    }
+    // Split pattern on '*', match prefix+suffix
+    if let Some(pos) = pattern.find('*') {
+        let prefix = &pattern[..pos];
+        let suffix = &pattern[pos + 1..];
+        filename.starts_with(prefix) && filename.ends_with(suffix)
+            && filename.len() >= prefix.len() + suffix.len()
+    } else {
+        pattern == filename
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -541,5 +611,65 @@ ttl = "14d"
         assert_eq!(OnDelete::parse("delete"), OnDelete::Delete);
         assert_eq!(OnDelete::parse("archive"), OnDelete::Archive);
         assert_eq!(OnDelete::parse("invalid"), OnDelete::Keep); // fallback
+    }
+
+    #[test]
+    fn simple_glob_basics() {
+        assert!(simple_glob_match("*", "anything"));
+        assert!(simple_glob_match("*.log", "app.log"));
+        assert!(!simple_glob_match("*.log", "app.json"));
+        assert!(simple_glob_match("app*", "apple"));
+        assert!(!simple_glob_match("app*", "xapple"));
+        assert!(simple_glob_match("*.tmp", "file.tmp"));
+        assert!(!simple_glob_match("*.tmp", "file.txt"));
+        assert!(simple_glob_match("data.*", "data.db"));
+        assert!(!simple_glob_match("data.*", "my-data.db"));
+        assert!(simple_glob_match("file", "file"));
+        assert!(!simple_glob_match("file", "filex"));
+    }
+
+    #[test]
+    fn should_monitor_per_volume() {
+        let v = ResolvedVolume {
+            name: "test".into(),
+            match_glob: "**".into(),
+            s3_prefix: "test".into(),
+            ttl: "30d".into(),
+            retries: 5,
+            extensions: vec!["db".into(), "wal".into()],
+            exclude: vec!["*.tmp".into()],
+            compression: None,
+            encryption: false,
+            on_stop: OnStop::Drain,
+            on_delete: OnDelete::Keep,
+        };
+
+        assert!(v.should_monitor(std::path::Path::new("/var/lib/hoard/volumes/test/data.db")));
+        assert!(v.should_monitor(std::path::Path::new("/var/lib/hoard/volumes/test/data.wal")));
+        assert!(!v.should_monitor(std::path::Path::new("/var/lib/hoard/volumes/test/data.json")));
+        assert!(!v.should_monitor(std::path::Path::new("/var/lib/hoard/volumes/test/data.tmp")));
+        assert!(!v.should_monitor(std::path::Path::new("/var/lib/hoard/volumes/test/README")));
+    }
+
+    #[test]
+    fn should_monitor_wildcard_all() {
+        let v = ResolvedVolume {
+            name: "catch-all".into(),
+            match_glob: "**".into(),
+            s3_prefix: "catch".into(),
+            ttl: "7d".into(),
+            retries: 3,
+            extensions: vec!["*".into()],
+            exclude: vec![],
+            compression: None,
+            encryption: false,
+            on_stop: OnStop::Drain,
+            on_delete: OnDelete::Keep,
+        };
+
+        assert!(v.should_monitor(std::path::Path::new("/var/lib/hoard/volumes/test/data.db")));
+        assert!(v.should_monitor(std::path::Path::new("/var/lib/hoard/volumes/test/data.json")));
+        assert!(v.should_monitor(std::path::Path::new("/var/lib/hoard/volumes/test/README")));
+        assert!(v.should_monitor(std::path::Path::new("/var/lib/hoard/volumes/test/image.png")));
     }
 }

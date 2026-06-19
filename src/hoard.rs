@@ -339,26 +339,30 @@ impl HoardReady {
 
         loop {
             tokio::select! {
-                // ── BPF event → resolve → debounce → queue ──
+                // ── BPF event → resolve → check volume filter → debounce → queue ──
                 Some(ev) = bpf_rx.recv() => {
                     let watch = watch_root.clone();
                     let pend = pending.clone();
                     let cache = inode_cache.clone();
+                    let reg = registry.clone();
 
                     // Spawn as fire-and-forget — concurrent debounce for high throughput
-                    let filt = filter.clone();
                     tokio::spawn(async move {
-                        let path = {
-                            let f = filt.lock().await;
-                            // Resolve inode once, check filter, drop lock before debounce
-                            match cache.resolve(&watch, ev.dev, ev.ino).await {
-                                Some(p) if f.should_monitor(&p) => Some(p),
-                                _ => None,
-                            }
-                        }; // filter lock dropped here
-                        if let Some(path) = path {
-                            Self::debounce_and_queue(&path, &pend).await;
+                        // Step 1: resolve inode to path
+                        let path = cache.resolve(&watch, ev.dev, ev.ino).await;
+                        let path = match path {
+                            Some(ref p) => p.clone(),
+                            None => return,
+                        };
+
+                        // Step 2: resolve volume & check per-volume extensions filter
+                        let vol = reg.resolve(&path, &watch);
+                        if !vol.should_monitor(&path) {
+                            return;
                         }
+
+                        // Step 3: debounce and queue for upload
+                        Self::debounce_and_queue(&path, &pend).await;
                     });
                 }
 
