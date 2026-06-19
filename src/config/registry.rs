@@ -27,6 +27,16 @@ impl VolumeRegistry {
         Self { volumes }
     }
 
+    /// Number of volumes in the registry.
+    pub fn len(&self) -> usize {
+        self.volumes.len()
+    }
+
+    /// Iterate over all volumes in priority order.
+    pub fn iter(&self) -> impl Iterator<Item = &ResolvedVolume> {
+        self.volumes.iter()
+    }
+
     /// Resolve a file path to its volume config.
     ///
     /// Returns the first (most specific) matching volume, or the

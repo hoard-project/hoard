@@ -14,6 +14,7 @@
 #![deny(unsafe_code)]
 
 use crate::config::{Mode, ValidatedConfig};
+use crate::config::registry::VolumeRegistry;
 use crate::ebpf::resolve::InodeCache;
 use crate::ebpf::{BpfProgram, FileFilter};
 use crate::pending::PersistentPending;
@@ -147,6 +148,7 @@ impl EbpfAttached {
         )
         .context("invalid watch pattern")?;
 
+        let registry = VolumeRegistry::new(self.config.volumes.clone());
         let inode_cache = Arc::new(InodeCache::new());
 
         // ── Initial scan: baseline upload of all matching files ──
@@ -155,7 +157,7 @@ impl EbpfAttached {
                 &self.config.watch_path,
                 &filter,
                 &s3,
-                &self.config.s3_prefix,
+                &registry,
                 &inode_cache,
             )
             .await;
@@ -166,6 +168,15 @@ impl EbpfAttached {
         }
 
         tracing::info!(mode = ?self.config.mode, "Hoard ready");
+        tracing::info!(
+            "volume registry: {} volumes", registry.len()
+        );
+        for v in registry.iter() {
+            tracing::info!(
+                "  volume '{}': match={}, prefix={}, ttl={}",
+                v.name, v.match_glob, v.s3_prefix, v.ttl
+            );
+        }
         Ok(HoardReady {
             ebpf: self.ebpf,
             s3,
@@ -173,6 +184,7 @@ impl EbpfAttached {
             config: self.config,
             filter,
             inode_cache,
+            registry,
         })
     }
 }
@@ -192,17 +204,28 @@ pub struct HoardReady {
     config: ValidatedConfig,
     filter: FileFilter,
     inode_cache: Arc<InodeCache>,
+    registry: VolumeRegistry,
 }
 
 impl HoardReady {
+    /// Resolve upload config for a given file path.
+    fn resolve_upload_params<'a>(
+        registry: &'a VolumeRegistry,
+        watch_root: &std::path::Path,
+        path: &std::path::Path,
+    ) -> (&'a str, u32) {
+        let vol = registry.resolve(path, watch_root);
+        (vol.s3_prefix.as_str(), vol.retries)
+    }
+
     pub async fn run(self) -> Result<()> {
         let gc_interval = Duration::from_secs(self.config.gc_interval_secs);
         let watch_root = Arc::new(self.config.watch_path.clone());
-        let s3_prefix = Arc::new(self.config.s3_prefix.clone());
+        let registry = Arc::new(self.registry);
         let filter = Arc::new(Mutex::new(self.filter));
         let gc_state = Arc::new(Mutex::new(GcReloadState {
             ttl: Duration::from_secs(u64::from(self.config.gc_ttl_days) * 86400),
-            prefix: self.config.s3_prefix.clone(),
+            prefix: String::new(), // per-volume GC uses registry
         }));
 
         let mut gc_timer = tokio::time::interval(gc_interval);
@@ -335,8 +358,9 @@ impl HoardReady {
                                 guard.drain()
                             };
                             for path in &to_upload {
+                                let (prefix, _) = Self::resolve_upload_params(&registry, &watch_root, path);
                                 if let Err(e) = Self::upload_file(
-                                    &s3, path, &watch_root, &s3_prefix,
+                                    &s3, path, &watch_root, prefix,
                                     &retry_cfg, &pending, &dead_letter_dir,
                                 ).await {
                                     tracing::error!(path = %path.display(), %e, "upload exhausted retries");
@@ -360,8 +384,9 @@ impl HoardReady {
                         guard.drain()
                     };
                     for path in &to_upload {
+                        let (prefix, _) = Self::resolve_upload_params(&registry, &watch_root, path);
                         if let Err(e) = Self::upload_file(
-                            &s3, path, &watch_root, &s3_prefix,
+                            &s3, path, &watch_root, prefix,
                             &retry_cfg, &pending, &dead_letter_dir,
                         ).await {
                             tracing::error!(path = %path.display(), %e, "upload exhausted retries");
@@ -399,8 +424,9 @@ impl HoardReady {
                         guard.drain()
                     };
                     for path in &to_upload {
+                        let (prefix, _) = Self::resolve_upload_params(&registry, &watch_root, path);
                         if let Err(e) = Self::upload_file(
-                            &s3, path, &watch_root, &s3_prefix,
+                            &s3, path, &watch_root, prefix,
                             &retry_cfg, &pending, &dead_letter_dir,
                         ).await {
                             tracing::error!(path = %path.display(), %e, "upload exhausted retries");
@@ -420,8 +446,9 @@ impl HoardReady {
                         guard.drain()
                     };
                     for path in &to_upload {
+                        let (prefix, _) = Self::resolve_upload_params(&registry, &watch_root, path);
                         if let Err(e) = Self::upload_file(
-                            &s3, path, &watch_root, &s3_prefix,
+                            &s3, path, &watch_root, prefix,
                             &retry_cfg, &pending, &dead_letter_dir,
                         ).await {
                             tracing::error!(path = %path.display(), %e, "upload exhausted retries");
@@ -439,8 +466,9 @@ impl HoardReady {
                         guard.drain()
                     };
                     for path in &to_upload {
+                        let (prefix, _) = Self::resolve_upload_params(&registry, &watch_root, path);
                         if let Err(e) = Self::upload_file(
-                            &s3, path, &watch_root, &s3_prefix,
+                            &s3, path, &watch_root, prefix,
                             &retry_cfg, &pending, &dead_letter_dir,
                         ).await {
                             tracing::error!(path = %path.display(), %e, "upload exhausted retries");
@@ -468,7 +496,7 @@ impl HoardReady {
                         &watch_root,
                         &scan_filter,
                         &s3,
-                        &s3_prefix,
+                        &registry,
                         &inode_cache,
                     ).await {
                         Ok(stats) => tracing::info!(?stats, "periodic scan complete"),
@@ -619,6 +647,7 @@ impl HoardReady {
         path: &std::path::Path,
         watch_root: &std::path::Path,
         prefix: &str,
+        _retries: u32,
     ) {
         match Self::upload_file_once(s3, path, watch_root, prefix).await {
             Ok(()) => {}
@@ -786,7 +815,7 @@ async fn run_initial_scan(
     watch_root: &std::path::Path,
     filter: &FileFilter,
     s3: &VerifiedS3Backend,
-    s3_prefix: &str,
+    registry: &VolumeRegistry,
     inode_cache: &std::sync::Arc<InodeCache>,
 ) -> Result<ScanStats> {
     let mut stats = ScanStats::default();
@@ -838,18 +867,19 @@ async fn run_initial_scan(
         // Arc the S3 backend so spawned tasks can hold a 'static reference.
         let s3_arc = std::sync::Arc::new(s3.clone());
         let watch_root_arc = std::sync::Arc::new(watch_root.to_path_buf());
-        let s3_prefix_arc = std::sync::Arc::new(s3_prefix.to_string());
+        let registry_arc = std::sync::Arc::new(registry.clone());
         let semaphore = std::sync::Arc::new(tokio::sync::Semaphore::new(8));
         let mut join_set = tokio::task::JoinSet::new();
 
         for path in files_to_upload {
             let s3 = s3_arc.clone();
             let watch_root = watch_root_arc.clone();
-            let prefix = s3_prefix_arc.clone();
+            let reg = registry_arc.clone();
             let permit = semaphore.clone();
             join_set.spawn(async move {
                 let _permit = permit.acquire().await;
-                HoardReady::upload_file_once_scan(&s3, &path, &watch_root, &prefix).await;
+                let (prefix, retries) = HoardReady::resolve_upload_params(&reg, &watch_root, &path);
+                HoardReady::upload_file_once_scan(&s3, &path, &watch_root, prefix, retries).await;
             });
         }
 

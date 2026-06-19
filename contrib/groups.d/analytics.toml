@@ -1,0 +1,8 @@
+# Analytics volume — loaded from conf.d
+[[volumes]]
+name = "analytics"
+match = "analytics/**"
+class = "critical"
+s3_prefix = "tenants/analytics"
+extensions = ["parquet", "csv", "json"]
+ttl = "180d"

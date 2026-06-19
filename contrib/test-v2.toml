@@ -1,0 +1,49 @@
+# Hoard v2 test config — StorageClass + Volume model
+[hoard]
+version = 2
+conf_dirs = ["groups.d"]
+
+[daemon]
+mode = "standalone"
+metrics_addr = "0.0.0.0:9150"
+service = "hoard-v2-test"
+
+[watch]
+paths = ["/tmp/hoard-v2-volumes"]
+
+[s3]
+endpoint = "http://localhost:9000"
+bucket = "guardian-backups"
+region = "us-east-1"
+access_key = "minioadmin"
+secret_key = "minioadmin"
+
+[defaults]
+prefix = "default"
+ttl = "30d"
+retries = 5
+
+[[storage_classes]]
+name = "critical"
+ttl = "90d"
+retries = 10
+
+[[storage_classes]]
+name = "ephemeral"
+ttl = "7d"
+retries = 3
+
+[[volumes]]
+name = "postgres-prod"
+match = "postgres/**"
+class = "critical"
+s3_prefix = "tenants/postgres-prod"
+extensions = ["db", "wal", "sqlite"]
+exclude = ["*.tmp", "*.journal"]
+
+[[volumes]]
+name = "app-logs"
+match = "app-logs/**"
+class = "ephemeral"
+s3_prefix = "tenants/app-logs"
+extensions = ["log", "json"]
