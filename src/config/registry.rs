@@ -7,64 +7,85 @@
 
 use super::v2::ResolvedVolume;
 use std::path::Path;
+use std::sync::RwLock;
 
 /// Lightweight volume registry for path-to-config resolution.
-#[derive(Debug, Clone)]
+///
+/// Internally uses a `RwLock<Vec<ResolvedVolume>>` so volumes can be
+/// atomically reloaded (SIGHUP / Nomad meta refresh) without blocking
+/// the BPF fast path.
+#[derive(Debug)]
 pub struct VolumeRegistry {
-    volumes: Vec<ResolvedVolume>,
+    volumes: RwLock<Vec<ResolvedVolume>>,
+}
+
+impl Clone for VolumeRegistry {
+    fn clone(&self) -> Self {
+        let guard = self.volumes.read().expect("VolumeRegistry read lock poisoned");
+        Self {
+            volumes: RwLock::new(guard.clone()),
+        }
+    }
 }
 
 impl VolumeRegistry {
     /// Create a new registry from resolved volumes.
     /// Volumes are sorted by glob specificity: longer patterns first.
     pub fn new(mut volumes: Vec<ResolvedVolume>) -> Self {
-        // Sort by specificity: longer globs = more specific = higher priority.
         volumes.sort_by(|a, b| {
             let specificity_a = glob_specificity(&a.match_glob);
             let specificity_b = glob_specificity(&b.match_glob);
             specificity_b.cmp(&specificity_a) // descending
         });
-        Self { volumes }
+        Self { volumes: RwLock::new(volumes) }
+    }
+
+    /// Reload the volume list atomically (SIGHUP / Nomad meta refresh).
+    pub fn reload(&self, mut new_volumes: Vec<ResolvedVolume>) {
+        new_volumes.sort_by(|a, b| {
+            let specificity_a = glob_specificity(&a.match_glob);
+            let specificity_b = glob_specificity(&b.match_glob);
+            specificity_b.cmp(&specificity_a)
+        });
+        let mut w = self.volumes.write().expect("VolumeRegistry write lock poisoned");
+        *w = new_volumes;
     }
 
     /// Number of volumes in the registry.
     pub fn len(&self) -> usize {
-        self.volumes.len()
+        self.volumes.read().expect("VolumeRegistry read lock poisoned").len()
     }
 
-    /// Iterate over all volumes in priority order (borrowed).
-    pub fn iter(&self) -> impl Iterator<Item = &ResolvedVolume> {
-        self.volumes.iter()
+    /// Iterate over all volumes in priority order (borrowed, locked for read).
+    pub fn iter(&self) -> impl Iterator<Item = ResolvedVolume> {
+        let guard = self.volumes.read().expect("VolumeRegistry read lock poisoned");
+        let cloned = guard.clone();
+        cloned.into_iter()
     }
 
     /// Iterate over all volumes in priority order (owned, for async).
     pub fn to_vec(&self) -> Vec<ResolvedVolume> {
-        self.volumes.clone()
+        self.volumes.read().expect("VolumeRegistry read lock poisoned").clone()
     }
 
     /// Resolve a file path to its volume config.
-    ///
-    /// Returns the first (most specific) matching volume, or the
-    /// last volume (which is always the `**` catch-all).
-    pub fn resolve(&self, file_path: &Path, watch_root: &Path) -> &ResolvedVolume {
-        // Compute the relative path from watch root.
+    pub fn resolve(&self, file_path: &Path, watch_root: &Path) -> ResolvedVolume {
+        let guard = self.volumes.read().expect("VolumeRegistry read lock poisoned");
+
         let rel = match file_path.strip_prefix(watch_root) {
             Ok(r) => r.to_string_lossy().to_string(),
             Err(_) => file_path.to_string_lossy().to_string(),
         };
-
-        // Normalize: remove leading './' and ensure no trailing '/'.
         let rel = rel.trim_start_matches("./");
 
-        // Try each volume's glob, most-specific first.
-        for vol in &self.volumes {
+        for vol in guard.iter() {
             if matches_glob(&vol.match_glob, rel) {
-                return vol;
+                return vol.clone();
             }
         }
 
         // Fallback: last volume (catch-all).
-        self.volumes.last().expect("VolumeRegistry must have at least one volume")
+        guard.last().cloned().expect("VolumeRegistry must have at least one volume")
     }
 }
 

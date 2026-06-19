@@ -25,7 +25,7 @@ use anyhow::{Context, Result};
 use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::sync::Mutex;
+use tokio::sync::{Mutex, RwLock};
 
 /// Update Prometheus gauges with current state.
 async fn update_gauges(pending: &Arc<Mutex<PersistentPending>>, dead_letter_dir: &std::path::Path) {
@@ -204,13 +204,13 @@ pub struct HoardReady {
 
 impl HoardReady {
     /// Resolve upload config for a given file path.
-    fn resolve_upload_params<'a>(
-        registry: &'a VolumeRegistry,
+    fn resolve_upload_params(
+        registry: &VolumeRegistry,
         watch_root: &std::path::Path,
         path: &std::path::Path,
-    ) -> (&'a str, u32) {
+    ) -> (String, u32) {
         let vol = registry.resolve(path, watch_root);
-        (vol.s3_prefix.as_str(), vol.retries)
+        (vol.s3_prefix, vol.retries)
     }
 
     /// Per-volume OnStop policy-aware graceful shutdown.
@@ -231,7 +231,7 @@ impl HoardReady {
         let mut failed = 0u64;
         for path in &to_upload {
             let (prefix, _) = Self::resolve_upload_params(registry, watch_root, path);
-            match Self::upload_file(s3, path, watch_root, prefix, retry_cfg, pending, dead_letter_dir).await {
+            match Self::upload_file(s3, path, watch_root, &prefix, retry_cfg, pending, dead_letter_dir).await {
                 Ok(()) => uploaded += 1,
                 Err(e) => {
                     tracing::error!(path = %path.display(), %e, "shutdown upload failed");
@@ -429,7 +429,7 @@ impl HoardReady {
                             for path in &to_upload {
                                 let (prefix, _) = Self::resolve_upload_params(&registry, &watch_root, path);
                                 if let Err(e) = Self::upload_file(
-                                    &s3, path, &watch_root, prefix,
+                                    &s3, path, &watch_root, &prefix,
                                     &retry_cfg, &pending, &dead_letter_dir,
                                 ).await {
                                     tracing::error!(path = %path.display(), %e, "upload exhausted retries");
@@ -455,7 +455,7 @@ impl HoardReady {
                     for path in &to_upload {
                         let (prefix, _) = Self::resolve_upload_params(&registry, &watch_root, path);
                         if let Err(e) = Self::upload_file(
-                            &s3, path, &watch_root, prefix,
+                            &s3, path, &watch_root, &prefix,
                             &retry_cfg, &pending, &dead_letter_dir,
                         ).await {
                             tracing::error!(path = %path.display(), %e, "upload exhausted retries");
@@ -499,7 +499,7 @@ impl HoardReady {
                     for path in &to_upload {
                         let (prefix, _) = Self::resolve_upload_params(&registry, &watch_root, path);
                         if let Err(e) = Self::upload_file(
-                            &s3, path, &watch_root, prefix,
+                            &s3, path, &watch_root, &prefix,
                             &retry_cfg, &pending, &dead_letter_dir,
                         ).await {
                             tracing::error!(path = %path.display(), %e, "upload exhausted retries");
@@ -552,9 +552,13 @@ impl HoardReady {
                     if let Some(ref md) = meta_discovery {
                         match md.discover().await {
                             Ok(meta_vols) => {
-                                tracing::info!(count = meta_vols.len(), "Nomad meta refresh: discovered volumes");
-                                for v in &meta_vols {
-                                    tracing::info!(name=%v.name, prefix=%v.s3_prefix, ttl=%v.ttl, "meta volume");
+                                if !meta_vols.is_empty() {
+                                    tracing::info!(count = meta_vols.len(), "Nomad meta refresh: discovered volumes");
+                                    // Merge: meta volumes first, then file-based volumes
+                                    let mut merged = meta_vols;
+                                    merged.extend(registry.to_vec());
+                                    registry.reload(merged);
+                                    tracing::info!(total = registry.len(), "volume registry updated with Nomad meta");
                                 }
                             }
                             Err(e) => tracing::warn!(%e, "Nomad meta refresh failed"),
@@ -634,22 +638,13 @@ async fn reload_config(
         }
     }
 
-    // Re-load conf.d and resolve fresh volumes
+    // Resolve fresh volumes
     let new_vols = crate::config::v2::resolve_volumes(&v2_config)
         .context("resolving volumes on SIGHUP")?;
 
-    // Merge existing meta volumes (keep highest priority)
-    // Note: meta volumes from Nomad will override on next poll
-    let new_registry = VolumeRegistry::new(new_vols);
-    let new_arc = Arc::new(new_registry);
-
-    // Atomic swap — but we can't replace an Arc<VolumeRegistry> behind a &Arc
-    // without unsafe. For now, log the intent. Full swap requires
-    // Arc::get_mut or a RwLock wrapper.
-    tracing::info!(
-        volume_count = new_arc.len(),
-        "volume registry would reload (RwLock upgrade pending)"
-    );
+    // Atomic reload — RwLock write, read-latches replaced in < 1µs
+    registry.reload(new_vols);
+    tracing::info!(count = registry.len(), "volume registry reloaded");
 
     Ok(())
 }
@@ -985,7 +980,7 @@ async fn run_initial_scan(
             join_set.spawn(async move {
                 let _permit = permit.acquire().await;
                 let (prefix, retries) = HoardReady::resolve_upload_params(&reg, &watch_root, &path);
-                HoardReady::upload_file_once_scan(&s3, &path, &watch_root, prefix, retries).await;
+                HoardReady::upload_file_once_scan(&s3, &path, &watch_root, &prefix, retries).await;
             });
         }
 
