@@ -78,12 +78,28 @@ impl PersistentPending {
     }
 
     /// Drain all entries and clear the database.
+    /// After draining, forces a WAL checkpoint so the on-disk size reflects
+    /// the empty state — without this, `len()` reads stale WAL entries and
+    /// the metrics gauge stays falsely high.
     pub fn drain(&mut self) -> Vec<PathBuf> {
         let files: Vec<PathBuf> = self.set.drain().collect();
         if let Err(e) = self.db.execute_batch("DELETE FROM pending;") {
             tracing::error!(%e, "failed to clear pending database during drain");
         }
+        self.checkpoint();
         files
+    }
+
+    /// Force a WAL checkpoint to shrink the WAL file.
+    /// `TRUNCATE` mode resets the WAL back to zero bytes instead of just
+    /// restarting it — important for long-running daemons where the WAL
+    /// would otherwise grow unbounded.
+    pub fn checkpoint(&self) {
+        if let Err(e) = self.db.execute_batch("PRAGMA wal_checkpoint(TRUNCATE);") {
+            tracing::error!(%e, "failed to checkpoint pending WAL");
+        } else {
+            tracing::debug!("pending WAL checkpointed (TRUNCATE)");
+        }
     }
 
     pub fn is_empty(&self) -> bool {
