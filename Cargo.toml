@@ -64,3 +64,7 @@ path = "src/main.rs"
 [[bin]]
 name = "test-upload"
 path = "src/bin/test_upload.rs"
+
+[[bin]]
+name = "hoard-atomic"
+path = "src/bin/hoard_atomic.rs"
