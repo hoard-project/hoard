@@ -108,8 +108,8 @@ pub fn update_health_gauges(pending_count: u64, dead_letter_count: u64) {
     PENDING_FILES.set(pending_count as f64);
     DEAD_LETTER_FILES.set(dead_letter_count as f64);
 
-    let mismatches = ETAG_MISMATCH_TOTAL.get() as u64;
-    let degraded = pending_count > 50 || dead_letter_count > 0 || mismatches > 0;
+    let mismatches = ETAG_MISMATCH_TOTAL.get();
+    let degraded = pending_count > 50 || dead_letter_count > 0 || (mismatches > 0.0);
     HEALTH_STATUS.set(if degraded { 0.0 } else { 1.0 });
 }
 
@@ -158,12 +158,12 @@ async fn metrics_handler(
                 .expect("failed to build flush response"))
         }
         (&Method::GET, "/health") => {
-            let pending = PENDING_FILES.get() as u64;
-            let dead = DEAD_LETTER_FILES.get() as u64;
-            let mismatches = ETAG_MISMATCH_TOTAL.get() as u64;
-            let failures = UPLOAD_FAILURES_TOTAL.get() as u64;
+            let pending = PENDING_FILES.get();
+            let dead = DEAD_LETTER_FILES.get();
+            let mismatches = ETAG_MISMATCH_TOTAL.get();
+            let failures = UPLOAD_FAILURES_TOTAL.get();
 
-            let degraded = pending > 50 || dead > 0 || mismatches > 0;
+            let degraded = pending > 50.0 || dead > 0.0 || mismatches > 0.0;
             let status = if degraded { "degraded" } else { "ok" };
             let code = if degraded {
                 StatusCode::SERVICE_UNAVAILABLE
