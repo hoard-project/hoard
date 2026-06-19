@@ -9,7 +9,7 @@ job "stress-large" {
         command = "/bin/bash"
         args = [
           "-c",
-          "DIR=/var/lib/hoard/volumes/stress-large\nmkdir -p $DIR\nEND=$((SECONDS+120))\nwhile [ $SECONDS -lt $END ]; do\n  SZ=$((RANDOM%3+2))\n  dd if=/dev/urandom of=$DIR/big-${NOMAD_ALLOC_INDEX}-$(date +%s).bin bs=1M count=$SZ 2>/dev/null\n  echo wrote ${SZ}MB\n  sleep 10\ndone\necho alloc-${NOMAD_ALLOC_INDEX}: done"
+          "set -eu\nD=/var/lib/hoard/volumes/stress-large\nmkdir -p $D\nt1=$(($(date +%s)+120))\nwhile [ $(date +%s) -lt $t1 ]; do\n  dd if=/dev/urandom of=$D/big-${NOMAD_ALLOC_INDEX}-$(date +%s).bin bs=1M count=$((RANDOM%3+2)) 2>/dev/null\n  sleep 10\ndone\necho alloc-${NOMAD_ALLOC_INDEX}: done"
         ]
       }
       resources {
