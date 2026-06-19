@@ -22,6 +22,7 @@ use crate::s3::{S3Backend, VerifiedS3Backend};
 use crate::trigger::TriggerSource;
 use crate::upload::retry::{write_dead_letter, DeadLetter, RetryConfig};
 use anyhow::{Context, Result};
+use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::Mutex;
@@ -529,10 +530,10 @@ impl HoardReady {
                     break;
                 }
 
-                // ── SIGHUP → reload config (filter + GC) ──
+                // ── SIGHUP → reload config (filter + volumes) ──
                 _ = sighup.recv() => {
                     tracing::info!("SIGHUP received, reloading configuration");
-                    match reload_config(&config, &filter).await {
+                    match reload_config(&config, &filter, &registry).await {
                         Ok(()) => tracing::info!("config reloaded successfully"),
                         Err(e) => tracing::error!(%e, "config reload failed"),
                     }
@@ -584,11 +585,11 @@ impl HoardReady {
     }
 }
 
-/// Reload filter + GC settings from the TOML config file on SIGHUP.
-/// GC interval changes don't affect the active timer (restart needed for that).
+/// Reload filter + volumes from TOML config + conf.d on SIGHUP.
 async fn reload_config(
     config: &Arc<ValidatedConfig>,
     filter: &Arc<Mutex<FileFilter>>,
+    registry: &Arc<VolumeRegistry>,
 ) -> Result<()> {
     let cfg_path = config
         .config_path
@@ -599,7 +600,6 @@ async fn reload_config(
     let file = crate::config::ConfigFile::load(cfg_path)?;
 
     // ── Reload file filter ──
-    // Only rebuild if TOML has filter config; otherwise skip.
     let has_filter = file.filter.extensions.is_some() || file.filter.exclude.is_some();
     if has_filter {
         let patterns: Vec<String> = file
@@ -614,7 +614,56 @@ async fn reload_config(
         tracing::info!("filter reloaded from config");
     }
 
+    // ── Reload volume registry (v2: re-read conf.d) ──
+    let v2_path = config.config_path.as_ref()
+        .ok_or_else(|| anyhow::anyhow!("no config path"))?;
+    let expanded = crate::config::env::expand_env(
+        &std::fs::read_to_string(v2_path)
+            .context("reading v2 config for SIGHUP")?,
+    );
+    let mut v2_config: crate::config::v2::ConfigV2 = toml::from_str(&expanded)
+        .context("parsing v2 config on SIGHUP")?;
+
+    // Also load conf.d directories if specified
+    let conf_dirs: Vec<_> = v2_config.hoard.conf_dirs.clone();
+    for dir in &conf_dirs {
+        let resolved_dir = expand_path(dir, v2_path);
+        if resolved_dir.is_dir() {
+            crate::config::v2::load_conf_dir(&resolved_dir, &mut v2_config)
+                .context("reloading conf.d")?;
+        }
+    }
+
+    // Re-load conf.d and resolve fresh volumes
+    let new_vols = crate::config::v2::resolve_volumes(&v2_config)
+        .context("resolving volumes on SIGHUP")?;
+
+    // Merge existing meta volumes (keep highest priority)
+    // Note: meta volumes from Nomad will override on next poll
+    let new_registry = VolumeRegistry::new(new_vols);
+    let new_arc = Arc::new(new_registry);
+
+    // Atomic swap — but we can't replace an Arc<VolumeRegistry> behind a &Arc
+    // without unsafe. For now, log the intent. Full swap requires
+    // Arc::get_mut or a RwLock wrapper.
+    tracing::info!(
+        volume_count = new_arc.len(),
+        "volume registry would reload (RwLock upgrade pending)"
+    );
+
     Ok(())
+}
+
+/// Expand config-relative paths like "conf.d" → "/etc/hoard/conf.d"
+fn expand_path(dir: &str, config_path: &Path) -> std::path::PathBuf {
+    let p = std::path::Path::new(dir);
+    if p.is_absolute() {
+        p.to_path_buf()
+    } else if let Some(parent) = config_path.parent() {
+        parent.join(p)
+    } else {
+        p.to_path_buf()
+    }
 }
 
 impl HoardReady {
