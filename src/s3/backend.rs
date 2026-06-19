@@ -93,6 +93,7 @@ impl S3Backend {
 }
 
 /// Verified S3 backend — credentials confirmed, operations available.
+#[derive(Clone)]
 pub struct VerifiedS3Backend {
     access_key: String,
     secret_key: String,

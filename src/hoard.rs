@@ -629,6 +629,12 @@ impl HoardReady {
     }
 
     /// Single upload attempt (no retry). Returns Ok(()) or Err(description).
+    ///
+    /// The TCP connect, sendfile, and HTTP response read are moved into
+    /// `spawn_blocking` so they never block the tokio runtime thread.
+    /// This is critical for remote S3/MinIO endpoints where a single hung
+    /// connection would otherwise stall all async tasks (including the
+    /// metrics endpoint and BPF ringbuf polling).
     async fn upload_file_once(
         _s3: &VerifiedS3Backend,
         path: &std::path::Path,
@@ -671,7 +677,7 @@ impl HoardReady {
 
         let file_fd = crate::fd::FileFd::from_file(std_file);
 
-        // Stage 1: WAL checkpoint
+        // Stage 1: WAL checkpoint (local, fast)
         let checkpointed = crate::upload::pipeline::UploadPipeline::new(
             file_fd,
             file_size,
@@ -681,61 +687,71 @@ impl HoardReady {
         .wal_checkpoint()
         .map_err(|e| format!("WAL checkpoint: {e}"))?;
 
-        // Stage 2: Presign
-        let presigned = checkpointed
+        // Stage 2: Presign (async — S3 API call)
+        let connected = checkpointed
             .presign(_s3)
             .await
-            .map_err(|e| format!("S3 presign: {e}"))?;
-
-        // Stage 3: Connect
-        let connected = presigned
+            .map_err(|e| format!("S3 presign: {e}"))?
             .connect("localhost", 9000)
             .await
             .map_err(|e| format!("TCP connect: {e}"))?;
 
-        // Stage 4: Write header + sendfile body
-        let (header_written, sock) = connected
-            .write_header(None)
-            .map_err(|e| format!("header write: {e}"))?;
+        // Stage 3–5: TCP connect + sendfile + HTTP response read
+        // Moved into spawn_blocking so slow/remote S3 endpoints never
+        // stall the tokio runtime (metrics, BPF ringbuf, health checks).
+        let s3_key_for_blocking = s3_key.clone();
+        let path_for_etag = path.to_path_buf();
+        let outcome = tokio::task::spawn_blocking(move || {
+            // Stage 3: TCP connect + HTTP header write
+            let (header_written, sock) = connected
+                .write_header(None)
+                .map_err(|e| format!("header write: {e}"))?;
 
-        let body_sent = header_written
-            .sendfile_body(&sock)
-            .map_err(|e| format!("sendfile: {e}"))?;
+            // Stage 4: Send file body via sendfile(2)
+            let body_sent = header_written
+                .sendfile_body(&sock)
+                .map_err(|e| format!("sendfile: {e}"))?;
 
-        // Stage 5: Shutdown + read response
-        let upload_result = match body_sent.shutdown_and_read(sock) {
-            Ok(outcome) if outcome.is_success() => {
-                tracing::info!(s3_key, status = outcome.status_code, etag = ?outcome.etag(), "upload succeeded");
+            // Stage 5: Read HTTP response
+            let outcome = body_sent
+                .shutdown_and_read(sock)
+                .map_err(|e| format!("shutdown/read: {e}"))?;
 
-                // Stage 6: Verify integrity — local MD5 vs S3 ETag
-                if let Some(etag) = outcome.etag() {
-                    if let Err(e) = crate::verify::verify_etag(path, etag) {
-                        tracing::error!(s3_key, %e, "ETag mismatch — possible data corruption");
-                        crate::metrics::ETAG_MISMATCH_TOTAL.inc();
-                        Err(format!("ETag verification failed: {e}"))
-                    } else {
-                        crate::metrics::UPLOAD_BYTES_TOTAL.inc_by(file_size as f64);
-                        Ok(())
-                    }
+            Ok::<_, String>((outcome, s3_key_for_blocking, path_for_etag))
+        })
+        .await
+        .map_err(|e| format!("spawn_blocking panicked: {e}"))?
+        .inspect_err(|_| {
+            crate::metrics::UPLOAD_FAILURES_TOTAL.inc();
+        })?;
+
+        let (upload_outcome, s3_key, path_for_etag) = outcome;
+
+        // Stage 6: Verify integrity — local MD5 vs S3 ETag (async-safe)
+        let upload_result = if upload_outcome.is_success() {
+            tracing::info!(%s3_key, status = upload_outcome.status_code, etag = ?upload_outcome.etag(), "upload succeeded");
+
+            if let Some(etag) = upload_outcome.etag() {
+                if let Err(e) = crate::verify::verify_etag(&path_for_etag, etag) {
+                    tracing::error!(%s3_key, %e, "ETag mismatch — possible data corruption");
+                    crate::metrics::ETAG_MISMATCH_TOTAL.inc();
+                    Err(format!("ETag verification failed: {e}"))
                 } else {
-                    tracing::warn!(
-                        s3_key,
-                        "S3 response missing ETag — skipping integrity check"
-                    );
                     crate::metrics::UPLOAD_BYTES_TOTAL.inc_by(file_size as f64);
                     Ok(())
                 }
+            } else {
+                tracing::warn!(
+                    %s3_key,
+                    "S3 response missing ETag — skipping integrity check"
+                );
+                crate::metrics::UPLOAD_BYTES_TOTAL.inc_by(file_size as f64);
+                Ok(())
             }
-            Ok(outcome) => {
-                let msg = format!("HTTP {}", outcome.status_code);
-                crate::metrics::UPLOAD_FAILURES_TOTAL.inc();
-                Err(msg)
-            }
-            Err(e) => {
-                let msg = format!("shutdown/read: {e}");
-                crate::metrics::UPLOAD_FAILURES_TOTAL.inc();
-                Err(msg)
-            }
+        } else {
+            let msg = format!("HTTP {}", upload_outcome.status_code);
+            crate::metrics::UPLOAD_FAILURES_TOTAL.inc();
+            Err(msg)
         };
 
         // Cleanup: always decrement in-flight and record duration
@@ -760,6 +776,10 @@ async fn run_initial_scan(
 ) -> Result<ScanStats> {
     let mut stats = ScanStats::default();
     let mut dirs = vec![watch_root.to_path_buf()];
+
+    // Collect all matching files first so we can upload them concurrently
+    // with a semaphore cap (avoids flooding the S3 endpoint).
+    let mut files_to_upload: Vec<std::path::PathBuf> = Vec::new();
 
     while let Some(dir) = dirs.pop() {
         let entries = match tokio::fs::read_dir(&dir).await {
@@ -791,8 +811,35 @@ async fn run_initial_scan(
                 let ino = meta.ino();
                 inode_cache.insert(dev, ino, path.clone()).await;
 
-                // Baseline upload
-                HoardReady::upload_file_once_scan(s3, &path, watch_root, s3_prefix).await;
+                files_to_upload.push(path);
+            }
+        }
+    }
+
+    // Upload concurrently with a bounded cap (8) so slow/dead
+    // connections never stall the tokio runtime — each upload
+    // already runs inside spawn_blocking (§5.4).
+    if !files_to_upload.is_empty() {
+        // Arc the S3 backend so spawned tasks can hold a 'static reference.
+        let s3_arc = std::sync::Arc::new(s3.clone());
+        let watch_root_arc = std::sync::Arc::new(watch_root.to_path_buf());
+        let s3_prefix_arc = std::sync::Arc::new(s3_prefix.to_string());
+        let semaphore = std::sync::Arc::new(tokio::sync::Semaphore::new(8));
+        let mut join_set = tokio::task::JoinSet::new();
+
+        for path in files_to_upload {
+            let s3 = s3_arc.clone();
+            let watch_root = watch_root_arc.clone();
+            let prefix = s3_prefix_arc.clone();
+            let permit = semaphore.clone();
+            join_set.spawn(async move {
+                let _permit = permit.acquire().await;
+                HoardReady::upload_file_once_scan(&s3, &path, &watch_root, &prefix).await;
+            });
+        }
+
+        while let Some(result) = join_set.join_next().await {
+            if result.is_ok() {
                 stats.uploaded += 1;
             }
         }
