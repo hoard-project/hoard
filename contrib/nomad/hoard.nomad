@@ -87,8 +87,29 @@ EOF
         S3_BUCKET     = "guardian-backups"
         S3_ACCESS_KEY = ""   # REQUIRED — set via Vault or nomad variable
         S3_SECRET_KEY = ""   # REQUIRED — set via Vault or nomad variable
-        S3_PREFIX      = "hoard"
+        S3_PREFIX     = "hoard"
       }
+
+      # ── Vault integration (optional — uncomment and comment out env{} above) ──
+      # This replaces the static env{} block with Vault-backed secrets.
+      #
+      # Prerequisites:
+      #   1. Vault cluster accessible from Nomad clients
+      #   2. Enable kv-v2:  vault secrets enable -path=hoard kv-v2
+      #   3. Store creds:   vault kv put hoard/s3 access_key=xxx secret_key=yyy
+      #   4. Create policy: vault policy write hoard-s3-read - <<<'path "hoard/data/s3" { capabilities = ["read"] }'
+      #
+      # vault {
+      #   policy = "hoard-s3-read"
+      # }
+      # template {
+      #   data        = <<EOF
+      # S3_ACCESS_KEY={{ with secret "hoard/data/s3" }}{{ .Data.data.access_key }}{{ end }}
+      # S3_SECRET_KEY={{ with secret "hoard/data/s3" }}{{ .Data.data.secret_key }}{{ end }}
+      # EOF
+      #   destination = "secrets/s3.env"
+      #   env         = true
+      # }
 
       resources {
         cpu    = 100

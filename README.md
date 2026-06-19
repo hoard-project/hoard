@@ -71,8 +71,6 @@ control_socket = "/run/hoard/<service>.sock"  # Unix domain socket
 
 [watch]
 path = "/var/lib/hoard/volumes"
-# patterns = "*.db,*.sqlite,*.log"           # glob filter
-# excludes = "*.tmp,*.journal"               # glob exclude
 
 [s3]
 endpoint   = "http://127.0.0.1:9000"
@@ -165,7 +163,7 @@ job "hoard" {
       }
 
       artifact {
-        source      = "https://github.com/hoard-project/hoard/releases/download/v0.3.1/hoard-linux-amd64.xz"
+        source      = "https://github.com/hoard-project/hoard/releases/download/v0.5.0/hoard-linux-amd64.xz"
         destination = "local/hoard.xz"
       }
 

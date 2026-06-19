@@ -21,7 +21,7 @@
 
 variable "hoard_version" {
   type        = string
-  default     = "0.3.1"
+  default     = "0.5.0"
   description = "Hoard version to deploy (must match a GitHub Release tag without 'v' prefix)"
 }
 
