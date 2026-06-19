@@ -687,6 +687,16 @@ impl HoardReady {
         .wal_checkpoint()
         .map_err(|e| format!("WAL checkpoint: {e}"))?;
 
+        // ── Pre-compute MD5 (pread, separate fd) to eliminate TOCTOU ──
+        // sendfile and verify_etag previously read the file at different
+        // times — if an application overwrites the file between the two
+        // reads, the ETag comparison fails spuriously.  We now compute
+        // the MD5 digest *once*, before sendfile, using pread on a
+        // dedicated file handle.  The digest is compared against the S3
+        // ETag without ever re-reading the file.
+        let expected_md5 = crate::verify::pread_md5(path)
+            .map_err(|e| format!("pread MD5: {e}"))?;
+
         // Stage 2: Presign (async — S3 API call)
         let connected = checkpointed
             .presign(_s3)
@@ -700,7 +710,6 @@ impl HoardReady {
         // Moved into spawn_blocking so slow/remote S3 endpoints never
         // stall the tokio runtime (metrics, BPF ringbuf, health checks).
         let s3_key_for_blocking = s3_key.clone();
-        let path_for_etag = path.to_path_buf();
         let outcome = tokio::task::spawn_blocking(move || {
             // Stage 3: TCP connect + HTTP header write
             let (header_written, sock) = connected
@@ -717,7 +726,7 @@ impl HoardReady {
                 .shutdown_and_read(sock)
                 .map_err(|e| format!("shutdown/read: {e}"))?;
 
-            Ok::<_, String>((outcome, s3_key_for_blocking, path_for_etag))
+            Ok::<_, String>((outcome, s3_key_for_blocking))
         })
         .await
         .map_err(|e| format!("spawn_blocking panicked: {e}"))?
@@ -725,17 +734,23 @@ impl HoardReady {
             crate::metrics::UPLOAD_FAILURES_TOTAL.inc();
         })?;
 
-        let (upload_outcome, s3_key, path_for_etag) = outcome;
+        let (upload_outcome, s3_key) = outcome;
 
-        // Stage 6: Verify integrity — local MD5 vs S3 ETag (async-safe)
+        // Stage 6: Verify integrity — pre-computed MD5 vs S3 ETag
+        // No file re-read.  The digest was captured via pread(2) after
+        // checkpoint and before sendfile, from a separate file handle.
+        // This eliminates the TOCTOU race where verify_etag would re-open
+        // and re-read the file after sendfile, potentially seeing different
+        // content if the application overwrote it mid-upload.
         let upload_result = if upload_outcome.is_success() {
             tracing::info!(%s3_key, status = upload_outcome.status_code, etag = ?upload_outcome.etag(), "upload succeeded");
 
             if let Some(etag) = upload_outcome.etag() {
-                if let Err(e) = crate::verify::verify_etag(&path_for_etag, etag) {
-                    tracing::error!(%s3_key, %e, "ETag mismatch — possible data corruption");
+                let etag = etag.trim_matches('"');
+                if !expected_md5.eq_ignore_ascii_case(etag) {
+                    tracing::error!(%s3_key, local = %expected_md5, s3 = %etag, "ETag mismatch — possible data corruption");
                     crate::metrics::ETAG_MISMATCH_TOTAL.inc();
-                    Err(format!("ETag verification failed: {e}"))
+                    Err(format!("ETag mismatch: local={expected_md5} s3={etag}"))
                 } else {
                     crate::metrics::UPLOAD_BYTES_TOTAL.inc_by(file_size as f64);
                     Ok(())

@@ -119,13 +119,29 @@ pub fn read(fd: RawFd, buf: &mut [u8]) -> io::Result<usize> {
     Ok(n as usize)
 }
 
-/// Write a buffer to a file descriptor.
+/// Read a buffer to a file descriptor.
 ///
 /// # Safety (internal)
 /// `fd` must be a valid, open file descriptor.
 pub fn write(fd: RawFd, buf: &[u8]) -> io::Result<usize> {
     // SAFETY: caller guarantees fd is valid and buf is readable
     let n = unsafe { libc::write(fd, buf.as_ptr() as *const libc::c_void, buf.len()) };
+    if n < 0 {
+        return Err(io::Error::last_os_error());
+    }
+    Ok(n as usize)
+}
+
+/// Position-independent read — like `read(2)` but from a fixed offset.
+/// Does NOT advance the file descriptor's seek position.  Safe to use
+/// on an fd that will later be consumed by sendfile(2).
+///
+/// # Safety (internal)
+/// `fd` must be a valid, open file descriptor (regular file or block device).
+pub fn pread(fd: RawFd, buf: &mut [u8], offset: i64) -> io::Result<usize> {
+    // SAFETY: caller guarantees fd is valid for pread (regular file).
+    // buf is writable for buf.len() bytes.
+    let n = unsafe { libc::pread(fd, buf.as_mut_ptr() as *mut libc::c_void, buf.len(), offset) };
     if n < 0 {
         return Err(io::Error::last_os_error());
     }

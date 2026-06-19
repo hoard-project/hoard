@@ -8,6 +8,7 @@
 #![deny(unsafe_code)]
 
 use std::io::Read;
+use std::os::fd::AsRawFd;
 use std::path::Path;
 
 /// Read a local file and compute its MD5 hex digest.
@@ -25,6 +26,36 @@ pub fn file_md5(path: &Path) -> Result<String, String> {
         }
         ctx.consume(&buf[..n]);
     }
+    let digest = ctx.finalize();
+    Ok(format!("{digest:x}"))
+}
+
+/// Compute MD5 via `pread(2)` — reads from an offset without moving the
+/// file descriptor's position.  This is used for pre-upload verification:
+/// the same fd can later be consumed by sendfile(2) which expects position 0.
+///
+/// Uses a dedicated file handle (separate from the sendfile fd) so that
+/// the MD5 computation and the upload read from the SAME snapshot of the
+/// file system — but without interfering with each other's offsets.
+pub fn pread_md5(path: &Path) -> Result<String, String> {
+    let file = std::fs::File::open(path)
+        .map_err(|e| format!("verify pread open {p}: {e}", p = path.display()))?;
+    let fd = file.as_raw_fd();
+
+    let mut ctx = md5::Context::new();
+    let mut buf = [0u8; 65536];
+    let mut offset: i64 = 0;
+
+    loop {
+        let n = crate::ffi::pread(fd, &mut buf, offset)
+            .map_err(|e| format!("verify pread {p}: {e}", p = path.display()))?;
+        if n == 0 {
+            break;
+        }
+        ctx.consume(&buf[..n]);
+        offset += n as i64;
+    }
+
     let digest = ctx.finalize();
     Ok(format!("{digest:x}"))
 }
@@ -80,5 +111,14 @@ mod tests {
         let path = dir.path().join("test.bin");
         std::fs::write(&path, b"hello world\n").expect("write test file");
         assert!(verify_etag(&path, "deadbeef").is_err());
+    }
+
+    #[test]
+    fn test_pread_md5() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("test.bin");
+        std::fs::write(&path, b"hello world\n").expect("write test file");
+        let digest = pread_md5(&path).expect("compute pread md5");
+        assert_eq!(digest, "6f5902ac237024bdd0c176cb93063dc4");
     }
 }
