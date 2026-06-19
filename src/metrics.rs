@@ -178,7 +178,7 @@ async fn metrics_handler(
                 .body(Full::new(Bytes::from(
                     r#"{"status":"ok","message":"flush triggered"}"#,
                 )))
-                .unwrap())
+                .expect("valid response"))
         }
         (&Method::GET, "/health") => {
             let degraded = HEALTH_STATUS.get() < 1.0;
@@ -195,7 +195,7 @@ async fn metrics_handler(
                 })
                 .header("Content-Type", "application/json")
                 .body(Full::new(Bytes::from(body.to_string())))
-                .unwrap())
+                .expect("valid response"))
         }
         _ => {
             let mut buffer = vec![];
@@ -206,7 +206,7 @@ async fn metrics_handler(
                 .status(StatusCode::OK)
                 .header("Content-Type", "text/plain; version=0.0.4")
                 .body(Full::new(Bytes::from(buffer)))
-                .unwrap())
+                .expect("valid response"))
         }
     }
 }
