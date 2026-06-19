@@ -191,12 +191,6 @@ impl EbpfAttached {
 
 // ── State: Ready (main loop) ─────────────────────────────────────
 
-/// Reloadable GC state, updated on SIGHUP.
-struct GcReloadState {
-    ttl: Duration,
-    prefix: String,
-}
-
 pub struct HoardReady {
     ebpf: BpfProgram,
     s3: VerifiedS3Backend,
@@ -223,10 +217,30 @@ impl HoardReady {
         let watch_root = Arc::new(self.config.watch_path.clone());
         let registry = Arc::new(self.registry);
         let filter = Arc::new(Mutex::new(self.filter));
-        let gc_state = Arc::new(Mutex::new(GcReloadState {
-            ttl: Duration::from_secs(u64::from(self.config.gc_ttl_days) * 86400),
-            prefix: String::new(), // per-volume GC uses registry
-        }));
+
+        // ── Nomad meta auto-discovery (if enabled) ──
+        let meta_discovery = if self.config.nomad_meta_enabled {
+            let poll_secs = self.config.nomad_meta_poll_secs;
+            let watch_path_str = self.config.watch_path.to_string_lossy().to_string();
+            let token = self.config.nomad_token.clone();
+            self.config.nomad_addr.as_ref().map(|addr| {
+                crate::nomad::meta::MetaDiscovery::new(
+                    addr,
+                    token.as_deref(),
+                    &watch_path_str,
+                    poll_secs,
+                )
+            })
+        } else {
+            None
+        };
+        let mut meta_timer = if meta_discovery.is_some() {
+            let mut t = tokio::time::interval(Duration::from_secs(self.config.nomad_meta_poll_secs));
+            t.tick().await; // skip first immediate tick
+            Some(t)
+        } else {
+            None
+        };
 
         let mut gc_timer = tokio::time::interval(gc_interval);
         gc_timer.tick().await;
@@ -486,9 +500,32 @@ impl HoardReady {
                 // ── SIGHUP → reload config (filter + GC) ──
                 _ = sighup.recv() => {
                     tracing::info!("SIGHUP received, reloading configuration");
-                    match reload_config(&config, &filter, &gc_state, &mut gc_timer).await {
+                    match reload_config(&config, &filter).await {
                         Ok(()) => tracing::info!("config reloaded successfully"),
                         Err(e) => tracing::error!(%e, "config reload failed"),
+                    }
+                }
+
+                // ── Nomad meta refresh ──
+                Some(_) = async {
+                    if let Some(ref mut t) = meta_timer {
+                        t.tick().await;
+                        Some(())
+                    } else {
+                        std::future::pending::<()>().await;
+                        None
+                    }
+                } => {
+                    if let Some(ref md) = meta_discovery {
+                        match md.discover().await {
+                            Ok(meta_vols) => {
+                                tracing::info!(count = meta_vols.len(), "Nomad meta refresh: discovered volumes");
+                                for v in &meta_vols {
+                                    tracing::info!(name=%v.name, prefix=%v.s3_prefix, ttl=%v.ttl, "meta volume");
+                                }
+                            }
+                            Err(e) => tracing::warn!(%e, "Nomad meta refresh failed"),
+                        }
                     }
                 }
 
@@ -520,8 +557,6 @@ impl HoardReady {
 async fn reload_config(
     config: &Arc<ValidatedConfig>,
     filter: &Arc<Mutex<FileFilter>>,
-    gc_state: &Arc<Mutex<GcReloadState>>,
-    _gc_timer: &mut tokio::time::Interval,
 ) -> Result<()> {
     let cfg_path = config
         .config_path
@@ -545,20 +580,6 @@ async fn reload_config(
             .context("failed to rebuild filter from reloaded config")?;
         let _old = std::mem::replace(&mut *filter.lock().await, new_filter);
         tracing::info!("filter reloaded from config");
-    }
-
-    // ── Reload GC settings ──
-    {
-        let mut gs = gc_state.lock().await;
-        if let Some(ttl_days) = file.gc.ttl_days {
-            let new_ttl = Duration::from_secs(u64::from(ttl_days) * 86400);
-            tracing::info!(
-                old_ttl_secs = gs.ttl.as_secs(),
-                new_ttl_secs = new_ttl.as_secs(),
-                "GC TTL reloaded"
-            );
-            gs.ttl = new_ttl;
-        }
     }
 
     Ok(())

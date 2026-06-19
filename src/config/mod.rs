@@ -21,7 +21,7 @@ use clap::Parser;
 use std::path::{Path, PathBuf};
 use url::Url;
 
-pub use v2::{ResolvedVolume, OnStop, OnDelete};
+pub use v2::{ResolvedVolume};
 pub use compat::ConfigFile;
 
 // ── CLI layer ────────────────────────────────────────────────────
@@ -251,6 +251,8 @@ impl Config {
                 })
                 .map(|v| v == 2)
                 .unwrap_or(false);
+
+            tracing::info!(is_v2, config_path = %config_path.display(), "config version detection");
 
             match is_v2 {
                 true => {

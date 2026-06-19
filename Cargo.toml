@@ -9,7 +9,7 @@ description = "eBPF + io_uring daemon for zero-copy file backup to S3 under Noma
 aya                    = "0.13"
 tokio                  = { version = "1", features = ["rt-multi-thread", "sync", "time", "net", "signal", "fs", "io-util", "macros"] }
 tokio-util             = { version = "0.7", features = ["io"] }
-reqwest                = { version = "0.13", default-features = false, features = ["native-tls", "stream"] }
+reqwest                = { version = "0.13", default-features = false, features = ["native-tls", "stream", "json"] }
 hmac                   = "0.13"
 digest                 = "0.11"
 sha2                   = "0.11"

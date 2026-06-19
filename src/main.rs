@@ -30,6 +30,7 @@ mod ebpf;
 mod fd;
 mod ffi;
 mod hoard;
+mod nomad;
 mod pending;
 mod s3;
 mod trigger;
