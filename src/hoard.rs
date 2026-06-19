@@ -475,10 +475,28 @@ impl HoardReady {
                             volume = %vol.name,
                             prefix = %vol.s3_prefix,
                             ttl_secs = ttl.as_secs(),
+                            on_delete = ?vol.on_delete,
                             "GC: scanning volume"
                         );
                         match crate::s3::gc::gc_cycle_mc("guser", &s3.bucket_name(), &vol.s3_prefix, ttl).await {
-                            Ok(stats) => {
+                            Ok(mut stats) => {
+                                // OnDelete::Delete — clean up orphaned S3 objects
+                                if vol.on_delete == crate::config::v2::OnDelete::Delete {
+                                    match crate::s3::gc::gc_orphan_cleanup(
+                                        "guser",
+                                        &s3.bucket_name(),
+                                        &vol.s3_prefix,
+                                        &watch_root,
+                                    ) {
+                                        Ok(orphans) => {
+                                            stats.orphans_deleted = orphans;
+                                            if orphans > 0 {
+                                                tracing::info!(orphans, volume = %vol.name, "GC: orphan cleanup");
+                                            }
+                                        }
+                                        Err(e) => tracing::error!(%e, volume = %vol.name, "GC: orphan cleanup failed"),
+                                    }
+                                }
                                 tracing::info!(?stats, volume = %vol.name, "GC cycle complete");
                                 crate::metrics::GC_CYCLES_TOTAL.inc();
                                 crate::metrics::GC_DELETED_TOTAL.inc_by(stats.deleted as f64);

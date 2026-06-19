@@ -2,11 +2,18 @@
 //!
 //! Uses `mc` CLI (pre-installed) for listing and deletion. Avoids SigV4 signing
 //! bugs and HTTP client quirks by delegating to a battle-tested tool.
+//!
+//! # Orphan cleanup (OnDelete)
+//!
+//! When `on_delete = "delete"` is set on a volume, GC also scans for S3 objects
+//! whose local counterparts have been deleted. These orphans are removed from S3
+//! regardless of TTL. `on_delete = "keep"` (default) leaves orphans untouched.
 
 #![deny(unsafe_code)]
 
 use anyhow::{Context, Result};
 use chrono::{Duration as ChronoDuration, Utc};
+use std::path::Path;
 use std::process::Command;
 use std::time::Duration;
 
@@ -16,6 +23,8 @@ pub struct GcStats {
     pub deleted: u64,
     pub errors: u64,
     pub bytes_freed: u64,
+    /// Orphaned objects deleted due to OnDelete policy.
+    pub orphans_deleted: u64,
 }
 
 /// An S3 object entry parsed from `mc ls --json`.
@@ -42,17 +51,7 @@ pub async fn gc_cycle_mc(
 
     // List objects under prefix using mc ls --json
     let list_path = format!("{mc_alias}/{bucket}/{prefix}/");
-    let output = Command::new("mc")
-        .args(["ls", "--json", &list_path])
-        .output()
-        .context("mc ls failed")?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        anyhow::bail!("mc ls returned non-zero: {stderr}");
-    }
-
-    let objects = parse_mc_json(&output.stdout)?;
+    let objects = list_objects(mc_alias, &list_path)?;
 
     let mut stats = GcStats::default();
 
@@ -67,20 +66,15 @@ pub async fn gc_cycle_mc(
 
         if expired {
             let rm_path = format!("{mc_alias}/{bucket}/{prefix}/{}", obj.key);
-            match Command::new("mc").args(["rm", &rm_path]).output() {
-                Ok(out) if out.status.success() => {
+            match delete_object(mc_alias, &rm_path) {
+                Ok(()) => {
                     stats.deleted += 1;
                     stats.bytes_freed += obj.size;
                     tracing::info!(key = %obj.key, size = obj.size, "GC: deleted expired object");
                 }
-                Ok(out) => {
-                    stats.errors += 1;
-                    let stderr = String::from_utf8_lossy(&out.stderr);
-                    tracing::error!(key = %obj.key, error = %stderr.trim(), "GC: delete failed");
-                }
                 Err(e) => {
                     stats.errors += 1;
-                    tracing::error!(key = %obj.key, error = %e, "GC: delete command failed");
+                    tracing::error!(key = %obj.key, error = %e, "GC: delete failed");
                 }
             }
         }
@@ -96,6 +90,80 @@ pub async fn gc_cycle_mc(
     );
 
     Ok(stats)
+}
+
+/// Clean up orphaned S3 objects — files deleted from disk but still in S3.
+///
+/// For each S3 object under `prefix`, checks if the corresponding local
+/// file exists under `watch_root`. If not, deletes it from S3.
+///
+/// This is the OnDelete::Delete policy implementation.
+pub fn gc_orphan_cleanup(
+    mc_alias: &str,
+    bucket: &str,
+    prefix: &str,
+    watch_root: &Path,
+) -> Result<u64> {
+    let list_path = format!("{mc_alias}/{bucket}/{prefix}/");
+    let objects = list_objects(mc_alias, &list_path)?;
+
+    let mut orphans = 0u64;
+
+    for obj in &objects {
+        // The S3 key is relative to prefix — reconstruct local path
+        let local_path = watch_root.join(&obj.key);
+        if !local_path.exists() {
+            let rm_path = format!("{mc_alias}/{bucket}/{prefix}/{}", obj.key);
+            match delete_object(mc_alias, &rm_path) {
+                Ok(()) => {
+                    orphans += 1;
+                    tracing::info!(
+                        key = %obj.key,
+                        size = obj.size,
+                        "GC: deleted orphaned S3 object (OnDelete::Delete)"
+                    );
+                }
+                Err(e) => {
+                    tracing::error!(key = %obj.key, error = %e, "GC: orphan delete failed");
+                }
+            }
+        }
+    }
+
+    if orphans > 0 {
+        tracing::info!(orphans, prefix, "GC: orphan cleanup complete");
+    }
+
+    Ok(orphans)
+}
+
+/// List S3 objects using `mc ls --json`.
+fn list_objects(mc_alias: &str, list_path: &str) -> Result<Vec<McObject>> {
+    let output = Command::new("mc")
+        .args(["ls", "--json", list_path])
+        .output()
+        .context("mc ls failed")?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        anyhow::bail!("mc ls returned non-zero: {stderr}");
+    }
+
+    parse_mc_json(&output.stdout)
+}
+
+/// Delete a single S3 object using `mc rm`.
+fn delete_object(mc_alias: &str, rm_path: &str) -> Result<()> {
+    let out = Command::new("mc")
+        .args(["rm", rm_path])
+        .output()
+        .context("mc rm failed")?;
+    if out.status.success() {
+        Ok(())
+    } else {
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        anyhow::bail!("mc rm: {stderr}")
+    }
 }
 
 /// Parse `mc ls --json` output (one JSON object per line).
