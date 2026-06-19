@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 //! Persistent pending-set backed by SQLite.
 //!
 //! On crash/restart, pending files are recovered from the database.

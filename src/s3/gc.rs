@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 //! Garbage collection: periodic cleanup of expired S3 backup objects via MinIO client.
 //!
 //! Uses `mc` CLI (pre-installed) for listing and deletion. Avoids SigV4 signing
@@ -138,7 +139,7 @@ pub fn gc_orphan_cleanup(
 }
 
 /// List S3 objects using `mc ls --json`.
-fn list_objects(mc_alias: &str, list_path: &str) -> Result<Vec<McObject>> {
+fn list_objects(_mc_alias: &str, list_path: &str) -> Result<Vec<McObject>> {
     let output = Command::new("mc")
         .args(["ls", "--json", list_path])
         .output()
@@ -153,7 +154,7 @@ fn list_objects(mc_alias: &str, list_path: &str) -> Result<Vec<McObject>> {
 }
 
 /// Delete a single S3 object using `mc rm`.
-fn delete_object(mc_alias: &str, rm_path: &str) -> Result<()> {
+fn delete_object(_mc_alias: &str, rm_path: &str) -> Result<()> {
     let out = Command::new("mc")
         .args(["rm", rm_path])
         .output()

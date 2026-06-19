@@ -27,7 +27,7 @@
 //! Meta volumes take priority over conf.d volumes. If both a file-based
 //! volume and a meta volume match the same path, the meta volume wins.
 
-use crate::config::v2::{ResolvedVolume, OnStop, OnDelete};
+use crate::config::v2::{OnDelete, OnStop, ResolvedVolume};
 use anyhow::{Context, Result};
 use serde::Deserialize;
 use std::collections::HashMap;
@@ -80,6 +80,7 @@ pub struct MetaDiscovery {
     addr: String,
     token: Option<String>,
     watch_root: String,
+    #[allow(dead_code)]
     poll_interval: Duration,
 }
 
@@ -138,7 +139,9 @@ impl MetaDiscovery {
             req = req.header("X-Nomad-Token", token);
         }
 
-        let resp = req.send().await
+        let resp = req
+            .send()
+            .await
             .with_context(|| format!("Nomad API list jobs: {}", url))?;
 
         if !resp.status().is_success() {
@@ -147,8 +150,7 @@ impl MetaDiscovery {
             anyhow::bail!("Nomad API returned {status}: {body}");
         }
 
-        let entries: Vec<JobListEntry> = resp.json().await
-            .context("parsing Nomad job list")?;
+        let entries: Vec<JobListEntry> = resp.json().await.context("parsing Nomad job list")?;
 
         // Only discover running jobs
         Ok(entries
@@ -163,18 +165,16 @@ impl MetaDiscovery {
         client: &reqwest::Client,
         job_id: &str,
     ) -> Result<Option<ResolvedVolume>> {
-        let url = format!(
-            "{}/v1/job/{}",
-            self.addr.trim_end_matches('/'),
-            job_id
-        );
+        let url = format!("{}/v1/job/{}", self.addr.trim_end_matches('/'), job_id);
         let mut req = client.get(&url);
 
         if let Some(ref token) = self.token {
             req = req.header("X-Nomad-Token", token);
         }
 
-        let resp = req.send().await
+        let resp = req
+            .send()
+            .await
             .with_context(|| format!("Nomad API get job {}", job_id))?;
 
         if !resp.status().is_success() {
@@ -182,12 +182,16 @@ impl MetaDiscovery {
             return Ok(None);
         }
 
-        let job: Job = resp.json().await
+        let job: Job = resp
+            .json()
+            .await
             .with_context(|| format!("parsing job spec for {}", job_id))?;
 
         // Extract hoard.* meta keys
         let _class = job.meta.get("hoard.class").cloned();
-        let enabled = job.meta.get("hoard.enabled")
+        let enabled = job
+            .meta
+            .get("hoard.enabled")
             .map(|v| v != "false")
             .unwrap_or(true);
 
@@ -201,7 +205,7 @@ impl MetaDiscovery {
         let mut volume_paths: Vec<String> = Vec::new();
 
         for tg in &job.task_groups {
-            for (vol_name, _vol_req) in &tg.volumes {
+            for vol_name in tg.volumes.keys() {
                 // The volume destination is typically configured in the
                 // task's volume_mount stanza, not in the group-level volume
                 // request. For now, derive from the volume name.
@@ -211,45 +215,56 @@ impl MetaDiscovery {
         }
 
         // If hoard.match is explicitly set, use it.
-        let match_glob = job.meta.get("hoard.match").cloned()
-            .unwrap_or_else(|| {
-                if volume_paths.is_empty() {
-                    format!("{}/**", job_id)
-                } else {
-                    volume_paths[0].clone()
-                }
-            });
+        let match_glob = job.meta.get("hoard.match").cloned().unwrap_or_else(|| {
+            if volume_paths.is_empty() {
+                format!("{}/**", job_id)
+            } else {
+                volume_paths[0].clone()
+            }
+        });
 
-        let s3_prefix = job.meta.get("hoard.s3_prefix")
+        let s3_prefix = job
+            .meta
+            .get("hoard.s3_prefix")
             .cloned()
             .unwrap_or_else(|| format!("nomad/{}", job_id));
 
-        let ttl = job.meta.get("hoard.ttl")
+        let ttl = job
+            .meta
+            .get("hoard.ttl")
             .cloned()
             .unwrap_or_else(|| "30d".to_string());
 
-        let retries: u32 = job.meta.get("hoard.retries")
+        let retries: u32 = job
+            .meta
+            .get("hoard.retries")
             .and_then(|v| v.parse().ok())
             .unwrap_or(5);
 
-        let extensions = job.meta.get("hoard.extensions")
+        let extensions = job
+            .meta
+            .get("hoard.extensions")
             .map(|v| v.split(',').map(|s| s.trim().to_string()).collect())
             .unwrap_or_else(|| vec!["*".to_string()]);
 
-        let exclude = job.meta.get("hoard.exclude")
+        let exclude = job
+            .meta
+            .get("hoard.exclude")
             .map(|v| v.split(',').map(|s| s.trim().to_string()).collect())
             .unwrap_or_default();
 
         let on_stop = OnStop::parse(
-            &job.meta.get("hoard.on_stop")
+            &job.meta
+                .get("hoard.on_stop")
                 .cloned()
-                .unwrap_or_else(|| "drain".to_string())
+                .unwrap_or_else(|| "drain".to_string()),
         );
 
         let on_delete = OnDelete::parse(
-            &job.meta.get("hoard.on_delete")
+            &job.meta
+                .get("hoard.on_delete")
                 .cloned()
-                .unwrap_or_else(|| "keep".to_string())
+                .unwrap_or_else(|| "keep".to_string()),
         );
 
         Ok(Some(ResolvedVolume {

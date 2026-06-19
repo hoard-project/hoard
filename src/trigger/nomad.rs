@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 //! Nomad mode trigger: event stream-based allocation monitoring.
 //!
 //! Connects to the Nomad agent's event stream (`/v1/event/stream`)

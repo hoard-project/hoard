@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 //! S3 backend with credential-gated access.
 //!
 //! `S3Backend` → `.verify()` → `VerifiedS3Backend`

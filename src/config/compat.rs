@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 //! v1 backward compatibility layer.
 //!
 //! v1 flat configs are loaded and mapped to the same `LegacyConfig`
@@ -65,7 +66,7 @@ pub fn default_legacy() -> LegacyConfig {
         watch_patterns: vec!["*".to_string()],
         watch_excludes: vec!["*.tmp".to_string(), "*.journal".to_string()],
         tls_mode: TlsMode::Plain,
-        s3_endpoint: Url::parse("http://localhost:9000").unwrap(),
+        s3_endpoint: Url::parse("http://localhost:9000").expect("hardcoded URL"),
         s3_region: "us-east-1".to_string(),
         s3_bucket: "backups".to_string(),
         s3_access_key: String::new(),
@@ -176,8 +177,7 @@ impl ConfigFileV1 {
         let raw = std::fs::read_to_string(path)
             .with_context(|| format!("reading v1 config: {}", path.display()))?;
         let expanded = env::expand_env(&raw);
-        toml::from_str(&expanded)
-            .with_context(|| format!("parsing v1 config: {}", path.display()))
+        toml::from_str(&expanded).with_context(|| format!("parsing v1 config: {}", path.display()))
     }
 }
 
@@ -198,11 +198,19 @@ pub fn load_v1(path: &Path) -> Result<LegacyConfig> {
             _ => Mode::Standalone,
         };
     }
-    if let Some(ref s) = file.daemon.service { def.service = s.clone(); }
-    if let Some(ref s) = file.daemon.control_socket { def.control_socket = PathBuf::from(s); }
-    if let Some(ref a) = file.daemon.metrics_addr { def.metrics_addr = a.clone(); }
+    if let Some(ref s) = file.daemon.service {
+        def.service = s.clone();
+    }
+    if let Some(ref s) = file.daemon.control_socket {
+        def.control_socket = PathBuf::from(s);
+    }
+    if let Some(ref a) = file.daemon.metrics_addr {
+        def.metrics_addr = a.clone();
+    }
 
-    if let Some(ref p) = file.watch.path { def.watch_path = PathBuf::from(p); }
+    if let Some(ref p) = file.watch.path {
+        def.watch_path = PathBuf::from(p);
+    }
     if let Some(ref p) = file.watch.patterns {
         def.watch_patterns = p.split(',').map(|s| s.trim().to_string()).collect();
     }
@@ -210,32 +218,66 @@ pub fn load_v1(path: &Path) -> Result<LegacyConfig> {
         def.watch_excludes = e.split(',').map(|s| s.trim().to_string()).collect();
     }
 
-    if let Some(ref e) = file.s3.endpoint { def.s3_endpoint = Url::parse(e)?; }
-    if let Some(ref r) = file.s3.region { def.s3_region = r.clone(); }
-    if let Some(ref b) = file.s3.bucket { def.s3_bucket = b.clone(); }
-    if let Some(ref k) = file.s3.access_key { def.s3_access_key = k.clone(); }
-    if let Some(ref s) = file.s3.secret_key { def.s3_secret_key = s.clone(); }
-    if let Some(p) = file.s3.prefix { def.s3_prefix = p; }
-    if let Some(n) = file.s3.no_sign { def.s3_no_sign = n; }
+    if let Some(ref e) = file.s3.endpoint {
+        def.s3_endpoint = Url::parse(e)?;
+    }
+    if let Some(ref r) = file.s3.region {
+        def.s3_region = r.clone();
+    }
+    if let Some(ref b) = file.s3.bucket {
+        def.s3_bucket = b.clone();
+    }
+    if let Some(ref k) = file.s3.access_key {
+        def.s3_access_key = k.clone();
+    }
+    if let Some(ref s) = file.s3.secret_key {
+        def.s3_secret_key = s.clone();
+    }
+    if let Some(p) = file.s3.prefix {
+        def.s3_prefix = p;
+    }
+    if let Some(n) = file.s3.no_sign {
+        def.s3_no_sign = n;
+    }
 
-    if let Some(ref a) = file.nomad.addr { def.nomad_addr = Some(a.clone()); }
-    if let Some(ref t) = file.nomad.token { def.nomad_token = Some(t.clone()); }
+    if let Some(ref a) = file.nomad.addr {
+        def.nomad_addr = Some(a.clone());
+    }
+    if let Some(ref t) = file.nomad.token {
+        def.nomad_token = Some(t.clone());
+    }
 
-    if let Some(i) = file.gc.interval_secs { def.gc_interval_secs = i; }
-    if let Some(t) = file.gc.ttl_days { def.gc_ttl_days = t; }
+    if let Some(i) = file.gc.interval_secs {
+        def.gc_interval_secs = i;
+    }
+    if let Some(t) = file.gc.ttl_days {
+        def.gc_ttl_days = t;
+    }
 
-    if let Some(ref exts) = file.filter.extensions { def.watch_patterns = exts.clone(); }
-    if let Some(ref ex) = file.filter.exclude { def.watch_excludes = ex.clone(); }
+    if let Some(ref exts) = file.filter.extensions {
+        def.watch_patterns = exts.clone();
+    }
+    if let Some(ref ex) = file.filter.exclude {
+        def.watch_excludes = ex.clone();
+    }
 
-    if let Some(ref p) = file.resilience.pending_db { def.pending_db = PathBuf::from(p); }
-    if let Some(r) = file.resilience.max_upload_retries { def.max_upload_retries = r; }
-    if let Some(ref d) = file.resilience.dead_letter_dir { def.dead_letter_dir = PathBuf::from(d); }
+    if let Some(ref p) = file.resilience.pending_db {
+        def.pending_db = PathBuf::from(p);
+    }
+    if let Some(r) = file.resilience.max_upload_retries {
+        def.max_upload_retries = r;
+    }
+    if let Some(ref d) = file.resilience.dead_letter_dir {
+        def.dead_letter_dir = PathBuf::from(d);
+    }
 
     Ok(def)
 }
 
 /// Like load_v1 but also returns a default volume for unified config.
-pub fn load_v1_with_default_volume(path: &Path) -> Result<(LegacyConfig, Vec<super::v2::ResolvedVolume>)> {
+pub fn load_v1_with_default_volume(
+    path: &Path,
+) -> Result<(LegacyConfig, Vec<super::v2::ResolvedVolume>)> {
     let legacy = load_v1(path)?;
     let vol = super::v2::ResolvedVolume {
         name: "default".to_string(),
@@ -285,9 +327,15 @@ pub fn v2_to_legacy(v2: &super::v2::ConfigV2, config_path: &Path) -> LegacyConfi
             _ => Mode::Standalone,
         };
     }
-    if let Some(ref s) = v2.daemon.service { def.service = s.clone(); }
-    if let Some(ref s) = v2.daemon.control_socket { def.control_socket = PathBuf::from(s); }
-    if let Some(ref a) = v2.daemon.metrics_addr { def.metrics_addr = a.clone(); }
+    if let Some(ref s) = v2.daemon.service {
+        def.service = s.clone();
+    }
+    if let Some(ref s) = v2.daemon.control_socket {
+        def.control_socket = PathBuf::from(s);
+    }
+    if let Some(ref a) = v2.daemon.metrics_addr {
+        def.metrics_addr = a.clone();
+    }
 
     // Watch
     if let Some(first) = v2.watch.paths.first() {
@@ -295,16 +343,23 @@ pub fn v2_to_legacy(v2: &super::v2::ConfigV2, config_path: &Path) -> LegacyConfi
     }
 
     // S3
-    def.s3_endpoint = Url::parse(&v2.s3.endpoint).unwrap_or_else(|_| {
-        Url::parse("http://localhost:9000").unwrap()
-    });
-    def.s3_region = if v2.s3.region.is_empty() { "us-east-1".to_string() } else { v2.s3.region.clone() };
+    def.s3_endpoint = Url::parse(&v2.s3.endpoint)
+        .unwrap_or_else(|_| Url::parse("http://localhost:9000").expect("hardcoded URL"));
+    def.s3_region = if v2.s3.region.is_empty() {
+        "us-east-1".to_string()
+    } else {
+        v2.s3.region.clone()
+    };
     def.s3_bucket = v2.s3.bucket.clone();
     def.s3_access_key = v2.s3.access_key.clone();
     def.s3_secret_key = v2.s3.secret_key.clone();
     def.s3_no_sign = v2.s3.no_sign;
     // Use the first volume's prefix as global for backward compat
-    def.s3_prefix = v2.defaults.prefix.clone().unwrap_or_else(|| "default".to_string());
+    def.s3_prefix = v2
+        .defaults
+        .prefix
+        .clone()
+        .unwrap_or_else(|| "default".to_string());
 
     // GC (from defaults)
     // Parse "30d" → 30
@@ -312,13 +367,23 @@ pub fn v2_to_legacy(v2: &super::v2::ConfigV2, config_path: &Path) -> LegacyConfi
     def.gc_interval_secs = 3600; // v2 doesn't have a global GC interval yet
 
     // Resilience
-    if let Some(ref p) = v2.resilience.pending_db { def.pending_db = PathBuf::from(p); }
-    if let Some(r) = v2.resilience.max_upload_retries { def.max_upload_retries = r; }
-    if let Some(ref d) = v2.resilience.dead_letter_dir { def.dead_letter_dir = PathBuf::from(d); }
+    if let Some(ref p) = v2.resilience.pending_db {
+        def.pending_db = PathBuf::from(p);
+    }
+    if let Some(r) = v2.resilience.max_upload_retries {
+        def.max_upload_retries = r;
+    }
+    if let Some(ref d) = v2.resilience.dead_letter_dir {
+        def.dead_letter_dir = PathBuf::from(d);
+    }
 
     // Nomad
-    if let Some(ref a) = v2.nomad.addr { def.nomad_addr = Some(a.clone()); }
-    if let Some(ref t) = v2.nomad.token { def.nomad_token = Some(t.clone()); }
+    if let Some(ref a) = v2.nomad.addr {
+        def.nomad_addr = Some(a.clone());
+    }
+    if let Some(ref t) = v2.nomad.token {
+        def.nomad_token = Some(t.clone());
+    }
     def.nomad_meta_enabled = v2.nomad.meta_enabled;
     def.nomad_meta_poll_secs = v2.nomad.meta_poll_secs.unwrap_or(300);
 

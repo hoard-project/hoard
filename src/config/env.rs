@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 //! Environment variable expansion for config strings.
 //!
 //! Supports `${ENV_VAR}` placeholders.  Missing variables are
@@ -58,7 +59,10 @@ mod tests {
     #[test]
     fn basic_expansion() {
         std::env::set_var("HOARD_TEST_FOO", "bar");
-        assert_eq!(expand_env("prefix_${HOARD_TEST_FOO}_suffix"), "prefix_bar_suffix");
+        assert_eq!(
+            expand_env("prefix_${HOARD_TEST_FOO}_suffix"),
+            "prefix_bar_suffix"
+        );
     }
 
     #[test]

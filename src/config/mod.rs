@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 //! Configuration loading: v1 compat, v2 StorageClass/Volume, CLI override.
 //!
 //! ## Load order
@@ -11,18 +12,18 @@
 //! v1 configs are translated to a single default volume so existing
 //! deployments keep working without changes.
 
-pub mod env;
-pub mod v2;
-pub mod registry;
 mod compat;
+pub mod env;
+pub mod registry;
+pub mod v2;
 
 use anyhow::{Context, Result};
 use clap::Parser;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use url::Url;
 
-pub use v2::{ResolvedVolume};
 pub use compat::ConfigFile;
+pub use v2::ResolvedVolume;
 
 // ── CLI layer ────────────────────────────────────────────────────
 
@@ -170,15 +171,18 @@ pub struct ValidatedConfig {
     pub watch_path: PathBuf,
     pub watch_patterns: Vec<String>,
     pub watch_excludes: Vec<String>,
+    #[allow(dead_code)]
     pub tls_mode: TlsModeArg,
     pub s3_endpoint: Url,
     pub s3_region: String,
     pub s3_bucket: String,
     pub s3_access_key: String,
     pub s3_secret_key: String,
+    #[allow(dead_code)]
     pub s3_prefix: String,
     pub s3_no_sign: bool,
     pub gc_interval_secs: u64,
+    #[allow(dead_code)]
     pub gc_ttl_days: u32,
     pub nomad_addr: Option<String>,
     pub nomad_token: Option<String>,
@@ -187,6 +191,7 @@ pub struct ValidatedConfig {
     pub pending_db: PathBuf,
     pub max_upload_retries: u32,
     pub dead_letter_dir: PathBuf,
+    #[allow(dead_code)]
     pub config_path: Option<PathBuf>,
 
     // ── v2 additions ──
@@ -201,12 +206,19 @@ pub struct ValidatedConfig {
 /// Convert LegacyConfig + resolved volumes into ValidatedConfig.
 fn legacy_to_validated(lc: compat::LegacyConfig, volumes: Vec<ResolvedVolume>) -> ValidatedConfig {
     ValidatedConfig {
-        mode: match lc.mode { compat::Mode::Standalone => Mode::Standalone, compat::Mode::Nomad => Mode::Nomad },
+        mode: match lc.mode {
+            compat::Mode::Standalone => Mode::Standalone,
+            compat::Mode::Nomad => Mode::Nomad,
+        },
         service: lc.service,
         watch_path: lc.watch_path,
         watch_patterns: lc.watch_patterns,
         watch_excludes: lc.watch_excludes,
-        tls_mode: match lc.tls_mode { compat::TlsMode::Ktls => TlsModeArg::Ktls, compat::TlsMode::Plain => TlsModeArg::Plain, compat::TlsMode::Userspace => TlsModeArg::Userspace },
+        tls_mode: match lc.tls_mode {
+            compat::TlsMode::Ktls => TlsModeArg::Ktls,
+            compat::TlsMode::Plain => TlsModeArg::Plain,
+            compat::TlsMode::Userspace => TlsModeArg::Userspace,
+        },
         s3_endpoint: lc.s3_endpoint,
         s3_region: lc.s3_region,
         s3_bucket: lc.s3_bucket,
@@ -267,7 +279,10 @@ impl Config {
                     for v in &volumes {
                         tracing::info!(
                             "  volume '{}': match={}, s3_prefix={}, ttl={}",
-                            v.name, v.match_glob, v.s3_prefix, v.ttl
+                            v.name,
+                            v.match_glob,
+                            v.s3_prefix,
+                            v.ttl
                         );
                     }
                     (compat::v2_to_legacy(&v2, config_path), volumes)
@@ -305,30 +320,66 @@ impl Config {
                 Mode::Nomad => compat::Mode::Nomad,
             };
         }
-        if let Some(ref s) = self.service { vc.service = s.clone(); }
-        if let Some(ref p) = self.watch_path { vc.watch_path = p.clone(); }
+        if let Some(ref s) = self.service {
+            vc.service = s.clone();
+        }
+        if let Some(ref p) = self.watch_path {
+            vc.watch_path = p.clone();
+        }
         if let Some(ref p) = self.watch_patterns {
             vc.watch_patterns = p.split(',').map(|s| s.trim().to_string()).collect();
         }
         if let Some(ref e) = self.watch_excludes {
             vc.watch_excludes = e.split(',').map(|s| s.trim().to_string()).collect();
         }
-        if let Some(ref e) = self.s3_endpoint { vc.s3_endpoint = e.clone(); }
-        if let Some(ref r) = self.s3_region { vc.s3_region = r.clone(); }
-        if let Some(ref b) = self.s3_bucket { vc.s3_bucket = b.clone(); }
-        if let Some(ref k) = self.s3_access_key { vc.s3_access_key = k.clone(); }
-        if let Some(ref s) = self.s3_secret_key { vc.s3_secret_key = s.clone(); }
-        if let Some(ref p) = self.s3_prefix { vc.s3_prefix = p.clone(); }
-        if let Some(n) = self.s3_no_sign { vc.s3_no_sign = n; }
-        if let Some(i) = self.gc_interval { vc.gc_interval_secs = i; }
-        if let Some(t) = self.gc_ttl_days { vc.gc_ttl_days = t; }
-        if let Some(ref a) = self.nomad_addr { vc.nomad_addr = Some(a.clone()); }
-        if let Some(ref t) = self.nomad_token { vc.nomad_token = Some(t.clone()); }
-        if let Some(ref s) = self.control_socket { vc.control_socket = s.clone(); }
-        if let Some(ref a) = self.metrics_addr { vc.metrics_addr = a.clone(); }
-        if let Some(ref p) = self.pending_db { vc.pending_db = PathBuf::from(p); }
-        if let Some(r) = self.max_upload_retries { vc.max_upload_retries = r; }
-        if let Some(ref d) = self.dead_letter_dir { vc.dead_letter_dir = PathBuf::from(d); }
+        if let Some(ref e) = self.s3_endpoint {
+            vc.s3_endpoint = e.clone();
+        }
+        if let Some(ref r) = self.s3_region {
+            vc.s3_region = r.clone();
+        }
+        if let Some(ref b) = self.s3_bucket {
+            vc.s3_bucket = b.clone();
+        }
+        if let Some(ref k) = self.s3_access_key {
+            vc.s3_access_key = k.clone();
+        }
+        if let Some(ref s) = self.s3_secret_key {
+            vc.s3_secret_key = s.clone();
+        }
+        if let Some(ref p) = self.s3_prefix {
+            vc.s3_prefix = p.clone();
+        }
+        if let Some(n) = self.s3_no_sign {
+            vc.s3_no_sign = n;
+        }
+        if let Some(i) = self.gc_interval {
+            vc.gc_interval_secs = i;
+        }
+        if let Some(t) = self.gc_ttl_days {
+            vc.gc_ttl_days = t;
+        }
+        if let Some(ref a) = self.nomad_addr {
+            vc.nomad_addr = Some(a.clone());
+        }
+        if let Some(ref t) = self.nomad_token {
+            vc.nomad_token = Some(t.clone());
+        }
+        if let Some(ref s) = self.control_socket {
+            vc.control_socket = s.clone();
+        }
+        if let Some(ref a) = self.metrics_addr {
+            vc.metrics_addr = a.clone();
+        }
+        if let Some(ref p) = self.pending_db {
+            vc.pending_db = PathBuf::from(p);
+        }
+        if let Some(r) = self.max_upload_retries {
+            vc.max_upload_retries = r;
+        }
+        if let Some(ref d) = self.dead_letter_dir {
+            vc.dead_letter_dir = PathBuf::from(d);
+        }
         if let Some(ref t) = self.tls_mode {
             vc.tls_mode = match t {
                 TlsModeArg::Ktls => compat::TlsMode::Ktls,

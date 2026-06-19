@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 //! Unsafe FFI bindings — the ONLY module allowed to use unsafe code.
 //!
 //! All unsafe operations are wrapped in safe Rust functions with

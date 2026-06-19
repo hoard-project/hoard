@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 //! AWS SigV4 signing for S3 presigned URLs.
 //!
 //! Pure Rust implementation without external AWS SDK crates.
@@ -60,6 +61,7 @@ pub async fn presign_delete(
 }
 
 /// Shared presigned URL builder for any HTTP method.
+#[allow(clippy::too_many_arguments)]
 fn presign_url(
     method: &str,
     access_key: &str,

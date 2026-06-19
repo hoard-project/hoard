@@ -21,7 +21,10 @@ pub struct VolumeRegistry {
 
 impl Clone for VolumeRegistry {
     fn clone(&self) -> Self {
-        let guard = self.volumes.read().expect("VolumeRegistry read lock poisoned");
+        let guard = self
+            .volumes
+            .read()
+            .expect("VolumeRegistry read lock poisoned");
         Self {
             volumes: RwLock::new(guard.clone()),
         }
@@ -37,7 +40,9 @@ impl VolumeRegistry {
             let specificity_b = glob_specificity(&b.match_glob);
             specificity_b.cmp(&specificity_a) // descending
         });
-        Self { volumes: RwLock::new(volumes) }
+        Self {
+            volumes: RwLock::new(volumes),
+        }
     }
 
     /// Reload the volume list atomically (SIGHUP / Nomad meta refresh).
@@ -47,30 +52,45 @@ impl VolumeRegistry {
             let specificity_b = glob_specificity(&b.match_glob);
             specificity_b.cmp(&specificity_a)
         });
-        let mut w = self.volumes.write().expect("VolumeRegistry write lock poisoned");
+        let mut w = self
+            .volumes
+            .write()
+            .expect("VolumeRegistry write lock poisoned");
         *w = new_volumes;
     }
 
     /// Number of volumes in the registry.
     pub fn len(&self) -> usize {
-        self.volumes.read().expect("VolumeRegistry read lock poisoned").len()
+        self.volumes
+            .read()
+            .expect("VolumeRegistry read lock poisoned")
+            .len()
     }
 
     /// Iterate over all volumes in priority order (borrowed, locked for read).
     pub fn iter(&self) -> impl Iterator<Item = ResolvedVolume> {
-        let guard = self.volumes.read().expect("VolumeRegistry read lock poisoned");
+        let guard = self
+            .volumes
+            .read()
+            .expect("VolumeRegistry read lock poisoned");
         let cloned = guard.clone();
         cloned.into_iter()
     }
 
     /// Iterate over all volumes in priority order (owned, for async).
     pub fn to_vec(&self) -> Vec<ResolvedVolume> {
-        self.volumes.read().expect("VolumeRegistry read lock poisoned").clone()
+        self.volumes
+            .read()
+            .expect("VolumeRegistry read lock poisoned")
+            .clone()
     }
 
     /// Resolve a file path to its volume config.
     pub fn resolve(&self, file_path: &Path, watch_root: &Path) -> ResolvedVolume {
-        let guard = self.volumes.read().expect("VolumeRegistry read lock poisoned");
+        let guard = self
+            .volumes
+            .read()
+            .expect("VolumeRegistry read lock poisoned");
 
         let rel = match file_path.strip_prefix(watch_root) {
             Ok(r) => r.to_string_lossy().to_string(),
@@ -85,7 +105,10 @@ impl VolumeRegistry {
         }
 
         // Fallback: last volume (catch-all).
-        guard.last().cloned().expect("VolumeRegistry must have at least one volume")
+        guard
+            .last()
+            .cloned()
+            .expect("VolumeRegistry must have at least one volume")
     }
 }
 
@@ -98,14 +121,13 @@ fn glob_specificity(pattern: &str) -> usize {
 /// Parse TTL string like "30d", "7d", "365d", "90d" into a Duration.
 pub fn parse_ttl(ttl: &str) -> std::time::Duration {
     let ttl = ttl.trim();
-    if ttl.ends_with('d') {
-        let days: u64 = ttl[..ttl.len()-1].parse().unwrap_or(30);
+    if let Some(days_str) = ttl.strip_suffix('d') {
+        let days: u64 = days_str.parse().unwrap_or(30);
         std::time::Duration::from_secs(days * 86400)
-    } else if ttl.ends_with('h') {
-        let hours: u64 = ttl[..ttl.len()-1].parse().unwrap_or(24);
+    } else if let Some(hours_str) = ttl.strip_suffix('h') {
+        let hours: u64 = hours_str.parse().unwrap_or(24);
         std::time::Duration::from_secs(hours * 3600)
     } else {
-        // Fallback: treat as raw seconds
         let secs: u64 = ttl.parse().unwrap_or(30 * 86400);
         std::time::Duration::from_secs(secs)
     }
@@ -123,12 +145,7 @@ fn matches_glob(pattern: &str, path: &str) -> bool {
     matches_glob_segments(&pattern_segments, &path_segments, 0, 0)
 }
 
-fn matches_glob_segments(
-    pattern: &[&str],
-    path: &[&str],
-    pi: usize,
-    si: usize,
-) -> bool {
+fn matches_glob_segments(pattern: &[&str], path: &[&str], pi: usize, si: usize) -> bool {
     if pi >= pattern.len() && si >= path.len() {
         return true;
     }
@@ -282,7 +299,10 @@ mod tests_ttl {
     fn parse_days() {
         assert_eq!(parse_ttl("30d"), std::time::Duration::from_secs(30 * 86400));
         assert_eq!(parse_ttl("7d"), std::time::Duration::from_secs(7 * 86400));
-        assert_eq!(parse_ttl("365d"), std::time::Duration::from_secs(365 * 86400));
+        assert_eq!(
+            parse_ttl("365d"),
+            std::time::Duration::from_secs(365 * 86400)
+        );
     }
 
     #[test]

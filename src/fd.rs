@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 //! File descriptor newtypes providing type-safe FD management.
 //!
 //! `FileFd` and `SocketFd` are zero-cost wrappers around `RawFd`

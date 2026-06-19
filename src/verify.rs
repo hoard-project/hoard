@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 //! Integrity verification — post-upload MD5 comparison with S3 ETag.
 //!
 //! MinIO (and most S3-compatible servers) set the ``ETag`` header to

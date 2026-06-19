@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 //! Path-based file filter for Hoard monitoring.
 //!
 //! Operates in userspace after inode→path resolution, before debounce.

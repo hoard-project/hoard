@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 //! BPF program loading and RingBuffer management.
 //!
 //! Uses the `aya` crate to load CO-RE BPF programs and manage

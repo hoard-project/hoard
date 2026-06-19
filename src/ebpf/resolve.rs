@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 //! Inode-to-path resolution for BPF (dev, ino) events.
 //!
 //! When a BPF event fires with (dev_t, ino_t), the

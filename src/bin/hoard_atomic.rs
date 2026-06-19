@@ -29,11 +29,13 @@ fn main() {
              Usage:  hoard-atomic <TARGET>\n\
              Example: echo data | hoard-atomic /var/lib/hoard/volumes/app/data.json"
         );
-        process::exit(if args.len() == 2 && (args[1] == "--help" || args[1] == "-h") {
-            0
-        } else {
-            1
-        });
+        process::exit(
+            if args.len() == 2 && (args[1] == "--help" || args[1] == "-h") {
+                0
+            } else {
+                1
+            },
+        );
     }
 
     let target = PathBuf::from(&args[1]);

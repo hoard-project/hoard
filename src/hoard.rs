@@ -13,8 +13,8 @@
 
 #![deny(unsafe_code)]
 
-use crate::config::{Mode, ValidatedConfig};
 use crate::config::registry::VolumeRegistry;
+use crate::config::{Mode, ValidatedConfig};
 use crate::ebpf::resolve::InodeCache;
 use crate::ebpf::{BpfProgram, FileFilter};
 use crate::pending::PersistentPending;
@@ -25,7 +25,7 @@ use anyhow::{Context, Result};
 use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::sync::{Mutex, RwLock};
+use tokio::sync::Mutex;
 
 /// Update Prometheus gauges with current state.
 async fn update_gauges(pending: &Arc<Mutex<PersistentPending>>, dead_letter_dir: &std::path::Path) {
@@ -169,13 +169,14 @@ impl EbpfAttached {
         }
 
         tracing::info!(mode = ?self.config.mode, "Hoard ready");
-        tracing::info!(
-            "volume registry: {} volumes", registry.len()
-        );
+        tracing::info!("volume registry: {} volumes", registry.len());
         for v in registry.iter() {
             tracing::info!(
                 "  volume '{}': match={}, prefix={}, ttl={}",
-                v.name, v.match_glob, v.s3_prefix, v.ttl
+                v.name,
+                v.match_glob,
+                v.s3_prefix,
+                v.ttl
             );
         }
         Ok(HoardReady {
@@ -231,7 +232,17 @@ impl HoardReady {
         let mut failed = 0u64;
         for path in &to_upload {
             let (prefix, _) = Self::resolve_upload_params(registry, watch_root, path);
-            match Self::upload_file(s3, path, watch_root, &prefix, retry_cfg, pending, dead_letter_dir).await {
+            match Self::upload_file(
+                s3,
+                path,
+                watch_root,
+                &prefix,
+                retry_cfg,
+                pending,
+                dead_letter_dir,
+            )
+            .await
+            {
                 Ok(()) => uploaded += 1,
                 Err(e) => {
                     tracing::error!(path = %path.display(), %e, "shutdown upload failed");
@@ -286,7 +297,8 @@ impl HoardReady {
             None
         };
         let mut meta_timer = if meta_discovery.is_some() {
-            let mut t = tokio::time::interval(Duration::from_secs(self.config.nomad_meta_poll_secs));
+            let mut t =
+                tokio::time::interval(Duration::from_secs(self.config.nomad_meta_poll_secs));
             t.tick().await; // skip first immediate tick
             Some(t)
         } else {
@@ -478,13 +490,13 @@ impl HoardReady {
                             on_delete = ?vol.on_delete,
                             "GC: scanning volume"
                         );
-                        match crate::s3::gc::gc_cycle_mc("guser", &s3.bucket_name(), &vol.s3_prefix, ttl).await {
+                        match crate::s3::gc::gc_cycle_mc("guser", s3.bucket_name(), &vol.s3_prefix, ttl).await {
                             Ok(mut stats) => {
                                 // OnDelete::Delete — clean up orphaned S3 objects
                                 if vol.on_delete == crate::config::v2::OnDelete::Delete {
                                     match crate::s3::gc::gc_orphan_cleanup(
                                         "guser",
-                                        &s3.bucket_name(),
+                                        s3.bucket_name(),
                                         &vol.s3_prefix,
                                         &watch_root,
                                     ) {
@@ -637,14 +649,15 @@ async fn reload_config(
     }
 
     // ── Reload volume registry (v2: re-read conf.d) ──
-    let v2_path = config.config_path.as_ref()
+    let v2_path = config
+        .config_path
+        .as_ref()
         .ok_or_else(|| anyhow::anyhow!("no config path"))?;
     let expanded = crate::config::env::expand_env(
-        &std::fs::read_to_string(v2_path)
-            .context("reading v2 config for SIGHUP")?,
+        &std::fs::read_to_string(v2_path).context("reading v2 config for SIGHUP")?,
     );
-    let mut v2_config: crate::config::v2::ConfigV2 = toml::from_str(&expanded)
-        .context("parsing v2 config on SIGHUP")?;
+    let mut v2_config: crate::config::v2::ConfigV2 =
+        toml::from_str(&expanded).context("parsing v2 config on SIGHUP")?;
 
     // Also load conf.d directories if specified
     let conf_dirs: Vec<_> = v2_config.hoard.conf_dirs.clone();
@@ -657,8 +670,8 @@ async fn reload_config(
     }
 
     // Resolve fresh volumes
-    let new_vols = crate::config::v2::resolve_volumes(&v2_config)
-        .context("resolving volumes on SIGHUP")?;
+    let new_vols =
+        crate::config::v2::resolve_volumes(&v2_config).context("resolving volumes on SIGHUP")?;
 
     // Atomic reload — RwLock write, read-latches replaced in < 1µs
     registry.reload(new_vols);
@@ -842,8 +855,7 @@ impl HoardReady {
         // the MD5 digest *once*, before sendfile, using pread on a
         // dedicated file handle.  The digest is compared against the S3
         // ETag without ever re-reading the file.
-        let expected_md5 = crate::verify::pread_md5(path)
-            .map_err(|e| format!("pread MD5: {e}"))?;
+        let expected_md5 = crate::verify::pread_md5(path).map_err(|e| format!("pread MD5: {e}"))?;
 
         // Stage 2: Presign (async — S3 API call)
         let connected = checkpointed

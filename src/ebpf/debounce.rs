@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 //! Stat-based dual-sample debounce for BPF events.
 //!
 //! When a BPF event fires, the file may still be actively written.

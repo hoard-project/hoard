@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 //! v2 config schema: StorageClass + Volume model.
 //!
 //! Inspired by Kubernetes StorageClass / PVC:
@@ -100,10 +101,18 @@ pub struct DefaultsSection {
     pub on_delete: String,
 }
 
-fn default_ttl() -> String { "30d".to_string() }
-fn default_retries() -> u32 { 5 }
-fn default_stop() -> String { "drain".to_string() }
-fn default_delete() -> String { "keep".to_string() }
+fn default_ttl() -> String {
+    "30d".to_string()
+}
+fn default_retries() -> u32 {
+    5
+}
+fn default_stop() -> String {
+    "drain".to_string()
+}
+fn default_delete() -> String {
+    "keep".to_string()
+}
 
 impl Default for DefaultsSection {
     fn default() -> Self {
@@ -172,7 +181,9 @@ pub struct Volume {
     pub enabled: bool,
 }
 
-fn default_true() -> bool { true }
+fn default_true() -> bool {
+    true
+}
 
 #[derive(Deserialize, Debug, Default, Clone)]
 #[serde(deny_unknown_fields)]
@@ -230,9 +241,7 @@ impl ResolvedVolume {
     pub fn should_monitor(&self, path: &std::path::Path) -> bool {
         // Check extensions filter
         if !self.extensions.is_empty() && !self.extensions.iter().any(|e| e == "*") {
-            let ext = path.extension()
-                .and_then(|e| e.to_str())
-                .unwrap_or("");
+            let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
             if !self.extensions.iter().any(|allowed| allowed == ext) {
                 tracing::debug!(
                     path = %path.display(),
@@ -247,9 +256,7 @@ impl ResolvedVolume {
 
         // Check exclude patterns
         if !self.exclude.is_empty() {
-            let filename = path.file_name()
-                .and_then(|f| f.to_str())
-                .unwrap_or("");
+            let filename = path.file_name().and_then(|f| f.to_str()).unwrap_or("");
             for pattern in &self.exclude {
                 if simple_glob_match(pattern, filename) {
                     tracing::debug!(
@@ -280,7 +287,8 @@ fn simple_glob_match(pattern: &str, filename: &str) -> bool {
     if let Some(pos) = pattern.find('*') {
         let prefix = &pattern[..pos];
         let suffix = &pattern[pos + 1..];
-        filename.starts_with(prefix) && filename.ends_with(suffix)
+        filename.starts_with(prefix)
+            && filename.ends_with(suffix)
             && filename.len() >= prefix.len() + suffix.len()
     } else {
         pattern == filename
@@ -327,7 +335,9 @@ impl OnDelete {
 
 /// Resolve all volumes: apply StorageClass inheritance → defaults fallback.
 pub fn resolve_volumes(v2: &ConfigV2) -> Result<Vec<ResolvedVolume>> {
-    let classes: HashMap<&str, &StorageClass> = v2.storage_classes.iter()
+    let classes: HashMap<&str, &StorageClass> = v2
+        .storage_classes
+        .iter()
         .map(|sc| (sc.name.as_str(), sc))
         .collect();
 
@@ -340,44 +350,55 @@ pub fn resolve_volumes(v2: &ConfigV2) -> Result<Vec<ResolvedVolume>> {
 
         let class = vol.class.as_deref().and_then(|c| classes.get(c));
 
-        let ttl = vol.ttl.clone()
+        let ttl = vol
+            .ttl
+            .clone()
             .or_else(|| class.and_then(|c| c.ttl.clone()))
             .unwrap_or_else(|| v2.defaults.ttl.clone());
 
-        let retries = vol.retries
+        let retries = vol
+            .retries
             .or_else(|| class.and_then(|c| c.retries))
             .unwrap_or(v2.defaults.retries);
 
-        let s3_prefix = vol.s3_prefix.clone()
-            .unwrap_or_else(|| vol.name.clone());
+        let s3_prefix = vol.s3_prefix.clone().unwrap_or_else(|| vol.name.clone());
 
-        let extensions = vol.extensions.clone()
+        let extensions = vol
+            .extensions
+            .clone()
             .or_else(|| v2.defaults.extensions.clone())
             .unwrap_or_else(|| vec!["*".to_string()]);
 
-        let exclude = vol.exclude.clone()
+        let exclude = vol
+            .exclude
+            .clone()
             .or_else(|| v2.defaults.exclude.clone())
             .unwrap_or_default();
 
-        let compression = vol.compression.clone()
+        let compression = vol
+            .compression
+            .clone()
             .or_else(|| class.and_then(|c| c.compression.clone()))
             .or_else(|| v2.defaults.compression.clone());
 
-        let encryption = vol.encryption
+        let encryption = vol
+            .encryption
             .or_else(|| class.and_then(|c| c.encryption))
             .or(v2.defaults.encryption)
             .unwrap_or(false);
 
         let on_stop = OnStop::parse(
-            &vol.on_stop.clone()
+            &vol.on_stop
+                .clone()
                 .or_else(|| class.and_then(|c| c.on_stop.clone()))
-                .unwrap_or_else(|| v2.defaults.on_stop.clone())
+                .unwrap_or_else(|| v2.defaults.on_stop.clone()),
         );
 
         let on_delete = OnDelete::parse(
-            &vol.on_delete.clone()
+            &vol.on_delete
+                .clone()
                 .or_else(|| class.and_then(|c| c.on_delete.clone()))
-                .unwrap_or_else(|| v2.defaults.on_delete.clone())
+                .unwrap_or_else(|| v2.defaults.on_delete.clone()),
         );
 
         resolved.push(ResolvedVolume {
@@ -400,10 +421,18 @@ pub fn resolve_volumes(v2: &ConfigV2) -> Result<Vec<ResolvedVolume>> {
         resolved.push(ResolvedVolume {
             name: "default".to_string(),
             match_glob: "**".to_string(),
-            s3_prefix: v2.defaults.prefix.clone().unwrap_or_else(|| "default".to_string()),
+            s3_prefix: v2
+                .defaults
+                .prefix
+                .clone()
+                .unwrap_or_else(|| "default".to_string()),
             ttl: v2.defaults.ttl.clone(),
             retries: v2.defaults.retries,
-            extensions: v2.defaults.extensions.clone().unwrap_or_else(|| vec!["*".to_string()]),
+            extensions: v2
+                .defaults
+                .extensions
+                .clone()
+                .unwrap_or_else(|| vec!["*".to_string()]),
             exclude: v2.defaults.exclude.clone().unwrap_or_default(),
             compression: v2.defaults.compression.clone(),
             encryption: v2.defaults.encryption.unwrap_or(false),
@@ -431,7 +460,7 @@ pub fn load_conf_dir(dir: &Path, v2: &mut ConfigV2) -> Result<()> {
         .with_context(|| format!("reading conf.d dir: {}", dir.display()))?
         .filter_map(|e| e.ok())
         .map(|e| e.path())
-        .filter(|p| p.extension().map_or(false, |ext| ext == "toml"))
+        .filter(|p| p.extension().is_some_and(|ext| ext == "toml"))
         .collect();
 
     entries.sort();
@@ -440,8 +469,8 @@ pub fn load_conf_dir(dir: &Path, v2: &mut ConfigV2) -> Result<()> {
         let raw = std::fs::read_to_string(&path)
             .with_context(|| format!("reading {}", path.display()))?;
         let expanded = env::expand_env(&raw);
-        let partial: ConfFilePartial = toml::from_str(&expanded)
-            .with_context(|| format!("parsing {}", path.display()))?;
+        let partial: ConfFilePartial =
+            toml::from_str(&expanded).with_context(|| format!("parsing {}", path.display()))?;
 
         v2.storage_classes.extend(partial.storage_classes);
         v2.volumes.extend(partial.volumes);
@@ -468,8 +497,8 @@ pub fn load(main_path: &Path) -> Result<ConfigV2> {
         .with_context(|| format!("reading {}", main_path.display()))?;
     let expanded = env::expand_env(&raw);
 
-    let mut v2: ConfigV2 = toml::from_str(&expanded)
-        .with_context(|| format!("parsing {}", main_path.display()))?;
+    let mut v2: ConfigV2 =
+        toml::from_str(&expanded).with_context(|| format!("parsing {}", main_path.display()))?;
 
     if v2.hoard.version != 2 {
         anyhow::bail!("config version must be 2, got {}", v2.hoard.version);
@@ -542,9 +571,9 @@ extensions = ["db", "wal"]
         assert_eq!(vols.len(), 1);
         let v = &vols[0];
         assert_eq!(v.name, "postgres");
-        assert_eq!(v.ttl, "90d");        // from class
-        assert_eq!(v.retries, 10);        // from class
-        assert_eq!(v.encryption, true);   // from class
+        assert_eq!(v.ttl, "90d"); // from class
+        assert_eq!(v.retries, 10); // from class
+        assert_eq!(v.encryption, true); // from class
         assert_eq!(v.extensions, vec!["db", "wal"]); // volume override
         assert_eq!(v.s3_prefix, "tenants/pg");
     }
@@ -574,8 +603,8 @@ retries = 3
         let v2: ConfigV2 = toml::from_str(toml_str).expect("parse");
         let vols = resolve_volumes(&v2).expect("resolve");
         let v = &vols[0];
-        assert_eq!(v.ttl, "7d");    // volume overrides class
-        assert_eq!(v.retries, 3);   // volume overrides class
+        assert_eq!(v.ttl, "7d"); // volume overrides class
+        assert_eq!(v.retries, 3); // volume overrides class
     }
 
     #[test]
@@ -646,7 +675,9 @@ ttl = "14d"
 
         assert!(v.should_monitor(std::path::Path::new("/var/lib/hoard/volumes/test/data.db")));
         assert!(v.should_monitor(std::path::Path::new("/var/lib/hoard/volumes/test/data.wal")));
-        assert!(!v.should_monitor(std::path::Path::new("/var/lib/hoard/volumes/test/data.json")));
+        assert!(!v.should_monitor(std::path::Path::new(
+            "/var/lib/hoard/volumes/test/data.json"
+        )));
         assert!(!v.should_monitor(std::path::Path::new("/var/lib/hoard/volumes/test/data.tmp")));
         assert!(!v.should_monitor(std::path::Path::new("/var/lib/hoard/volumes/test/README")));
     }
@@ -668,8 +699,12 @@ ttl = "14d"
         };
 
         assert!(v.should_monitor(std::path::Path::new("/var/lib/hoard/volumes/test/data.db")));
-        assert!(v.should_monitor(std::path::Path::new("/var/lib/hoard/volumes/test/data.json")));
+        assert!(v.should_monitor(std::path::Path::new(
+            "/var/lib/hoard/volumes/test/data.json"
+        )));
         assert!(v.should_monitor(std::path::Path::new("/var/lib/hoard/volumes/test/README")));
-        assert!(v.should_monitor(std::path::Path::new("/var/lib/hoard/volumes/test/image.png")));
+        assert!(v.should_monitor(std::path::Path::new(
+            "/var/lib/hoard/volumes/test/image.png"
+        )));
     }
 }
