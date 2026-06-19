@@ -282,7 +282,6 @@ pub fn enable_ktls(sock_fd: RawFd, cipher: TlsCipher, keys: &TlsKeys) -> io::Res
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
-    use std::fs::File;
     use std::io::Write;
     use tempfile::NamedTempFile;
 
@@ -295,7 +294,7 @@ mod tests {
         let fd = f.as_raw_fd();
 
         let mut buf = [0u8; 32];
-        let n = unsafe { read(fd, &mut buf) }.unwrap();
+        let n = read(fd, &mut buf).unwrap();
         assert_eq!(&buf[..n], b"hoard test data");
     }
 }

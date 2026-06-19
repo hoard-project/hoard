@@ -16,7 +16,7 @@
 
 use anyhow::{Context, Result};
 use bytes::Bytes;
-use futures::StreamExt;
+use futures_util::StreamExt;
 use serde::Deserialize;
 use std::path::PathBuf;
 use std::pin::Pin;

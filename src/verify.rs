@@ -25,7 +25,7 @@ pub fn file_md5(path: &Path) -> Result<String, String> {
         }
         ctx.consume(&buf[..n]);
     }
-    let digest = ctx.compute();
+    let digest = ctx.finalize();
     Ok(format!("{digest:x}"))
 }
 
@@ -47,7 +47,6 @@ pub fn verify_etag(path: &Path, etag: &str) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::io::Write;
 
     #[test]
     fn test_file_md5_known() {

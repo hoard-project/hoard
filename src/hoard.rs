@@ -636,6 +636,8 @@ impl HoardReady {
         prefix: &str,
     ) -> Result<(), String> {
         crate::metrics::UPLOAD_TOTAL.inc();
+        crate::metrics::UPLOAD_IN_FLIGHT.inc();
+        let _start = std::time::Instant::now();
 
         let file_name = path
             .file_name()
@@ -701,7 +703,7 @@ impl HoardReady {
             .map_err(|e| format!("sendfile: {e}"))?;
 
         // Stage 5: Shutdown + read response
-        match body_sent.shutdown_and_read(sock) {
+        let upload_result = match body_sent.shutdown_and_read(sock) {
             Ok(outcome) if outcome.is_success() => {
                 tracing::info!(s3_key, status = outcome.status_code, etag = ?outcome.etag(), "upload succeeded");
 
@@ -710,17 +712,19 @@ impl HoardReady {
                     if let Err(e) = crate::verify::verify_etag(path, etag) {
                         tracing::error!(s3_key, %e, "ETag mismatch — possible data corruption");
                         crate::metrics::ETAG_MISMATCH_TOTAL.inc();
-                        return Err(format!("ETag verification failed: {e}"));
+                        Err(format!("ETag verification failed: {e}"))
+                    } else {
+                        crate::metrics::UPLOAD_BYTES_TOTAL.inc_by(file_size as f64);
+                        Ok(())
                     }
                 } else {
                     tracing::warn!(
                         s3_key,
                         "S3 response missing ETag — skipping integrity check"
                     );
+                    crate::metrics::UPLOAD_BYTES_TOTAL.inc_by(file_size as f64);
+                    Ok(())
                 }
-
-                crate::metrics::UPLOAD_BYTES_TOTAL.inc_by(file_size as f64);
-                Ok(())
             }
             Ok(outcome) => {
                 let msg = format!("HTTP {}", outcome.status_code);
@@ -732,7 +736,13 @@ impl HoardReady {
                 crate::metrics::UPLOAD_FAILURES_TOTAL.inc();
                 Err(msg)
             }
-        }
+        };
+
+        // Cleanup: always decrement in-flight and record duration
+        crate::metrics::UPLOAD_IN_FLIGHT.dec();
+        crate::metrics::UPLOAD_DURATION_SECONDS.observe(_start.elapsed().as_secs_f64());
+
+        upload_result
     }
 }
 

@@ -12,96 +12,115 @@ use hyper::server::conn::http1;
 use hyper::service::service_fn;
 use hyper::{Method, Request, Response, StatusCode};
 use hyper_util::rt::TokioIo;
-use lazy_static::lazy_static;
 use prometheus::{
     register_counter, register_gauge, register_histogram, Counter, Encoder, Gauge, Histogram,
 };
 use std::convert::Infallible;
+use std::sync::LazyLock;
 use tokio::net::TcpListener;
 use tokio::sync::mpsc;
 
 // ── Metric definitions ────────────────────────────────────────────
 
-lazy_static! {
-    /// Total number of uploads attempted.
-    pub static ref UPLOAD_TOTAL: Counter = register_counter!(
-        "hoard_upload_total",
-        "Total number of uploads attempted"
-    ).expect("duplicate metric: hoard_upload_total");
+/// Total number of uploads attempted.
+pub static UPLOAD_TOTAL: LazyLock<Counter> = LazyLock::new(|| {
+    register_counter!("hoard_upload_total", "Total number of uploads attempted")
+        .expect("duplicate metric: hoard_upload_total")
+});
 
-    /// Total bytes uploaded.
-    pub static ref UPLOAD_BYTES_TOTAL: Counter = register_counter!(
-        "hoard_upload_bytes_total",
-        "Total bytes uploaded"
-    ).expect("duplicate metric: hoard_upload_bytes_total");
+/// Total bytes uploaded.
+pub static UPLOAD_BYTES_TOTAL: LazyLock<Counter> = LazyLock::new(|| {
+    register_counter!("hoard_upload_bytes_total", "Total bytes uploaded")
+        .expect("duplicate metric: hoard_upload_bytes_total")
+});
 
-    /// Number of uploads currently in flight.
-    pub static ref UPLOAD_IN_FLIGHT: Gauge = register_gauge!(
-        "hoard_upload_in_flight",
-        "Uploads currently in progress"
-    ).expect("duplicate metric: hoard_upload_in_flight");
+/// Number of uploads currently in flight.
+pub static UPLOAD_IN_FLIGHT: LazyLock<Gauge> = LazyLock::new(|| {
+    register_gauge!("hoard_upload_in_flight", "Uploads currently in progress")
+        .expect("duplicate metric: hoard_upload_in_flight")
+});
 
-    /// Duration of uploads (histogram).
-    pub static ref UPLOAD_DURATION_SECONDS: Histogram = register_histogram!(
+/// Duration of uploads (histogram).
+pub static UPLOAD_DURATION_SECONDS: LazyLock<Histogram> = LazyLock::new(|| {
+    register_histogram!(
         "hoard_upload_duration_seconds",
         "Upload duration histogram",
         vec![0.01, 0.05, 0.1, 0.5, 1.0, 5.0, 10.0, 30.0, 60.0]
-    ).expect("duplicate metric: hoard_upload_duration_seconds");
+    )
+    .expect("duplicate metric: hoard_upload_duration_seconds")
+});
 
-    /// Total GC cycles completed.
-    pub static ref GC_CYCLES_TOTAL: Counter = register_counter!(
+/// Total GC cycles completed.
+pub static GC_CYCLES_TOTAL: LazyLock<Counter> = LazyLock::new(|| {
+    register_counter!(
         "hoard_gc_cycles_total",
         "Total number of GC cycles completed"
-    ).expect("duplicate metric: hoard_gc_cycles_total");
+    )
+    .expect("duplicate metric: hoard_gc_cycles_total")
+});
 
-    /// Total objects deleted by GC.
-    pub static ref GC_DELETED_TOTAL: Counter = register_counter!(
-        "hoard_gc_deleted_total",
-        "Total objects deleted by GC"
-    ).expect("duplicate metric: hoard_gc_deleted_total");
+/// Total objects deleted by GC.
+pub static GC_DELETED_TOTAL: LazyLock<Counter> = LazyLock::new(|| {
+    register_counter!("hoard_gc_deleted_total", "Total objects deleted by GC")
+        .expect("duplicate metric: hoard_gc_deleted_total")
+});
 
-    /// Total GC errors.
-    pub static ref GC_ERRORS_TOTAL: Counter = register_counter!(
-        "hoard_gc_errors_total",
-        "Total GC errors"
-    ).expect("duplicate metric: hoard_gc_errors_total");
+/// Total GC errors.
+pub static GC_ERRORS_TOTAL: LazyLock<Counter> = LazyLock::new(|| {
+    register_counter!("hoard_gc_errors_total", "Total GC errors")
+        .expect("duplicate metric: hoard_gc_errors_total")
+});
 
-    /// RingBuffer events received.
-    pub static ref RINGBUF_EVENTS_TOTAL: Counter = register_counter!(
+/// RingBuffer events received.
+pub static RINGBUF_EVENTS_TOTAL: LazyLock<Counter> = LazyLock::new(|| {
+    register_counter!(
         "hoard_ringbuf_events_total",
         "Total BPF RingBuffer events received"
-    ).expect("duplicate metric: hoard_ringbuf_events_total");
+    )
+    .expect("duplicate metric: hoard_ringbuf_events_total")
+});
 
-    /// Upload failures.
-    pub static ref UPLOAD_FAILURES_TOTAL: Counter = register_counter!(
-        "hoard_upload_failures_total",
-        "Total upload failures"
-    ).expect("duplicate metric: hoard_upload_failures_total");
+/// Upload failures.
+pub static UPLOAD_FAILURES_TOTAL: LazyLock<Counter> = LazyLock::new(|| {
+    register_counter!("hoard_upload_failures_total", "Total upload failures")
+        .expect("duplicate metric: hoard_upload_failures_total")
+});
 
-    /// ETag mismatches (silent data corruption detected).
-    pub static ref ETAG_MISMATCH_TOTAL: Counter = register_counter!(
+/// ETag mismatches (silent data corruption detected).
+pub static ETAG_MISMATCH_TOTAL: LazyLock<Counter> = LazyLock::new(|| {
+    register_counter!(
         "hoard_etag_mismatch_total",
         "Total ETag mismatches (local MD5 ≠ S3 ETag)"
-    ).expect("duplicate metric: hoard_etag_mismatch_total");
+    )
+    .expect("duplicate metric: hoard_etag_mismatch_total")
+});
 
-    /// Current number of files pending upload.
-    pub static ref PENDING_FILES: Gauge = register_gauge!(
+/// Current number of files pending upload.
+pub static PENDING_FILES: LazyLock<Gauge> = LazyLock::new(|| {
+    register_gauge!(
         "hoard_pending_files",
         "Current number of files waiting to be uploaded"
-    ).expect("duplicate metric: hoard_pending_files");
+    )
+    .expect("duplicate metric: hoard_pending_files")
+});
 
-    /// Current number of files in dead-letter queue.
-    pub static ref DEAD_LETTER_FILES: Gauge = register_gauge!(
+/// Current number of files in dead-letter queue.
+pub static DEAD_LETTER_FILES: LazyLock<Gauge> = LazyLock::new(|| {
+    register_gauge!(
         "hoard_dead_letter_files",
         "Current number of files in dead-letter queue"
-    ).expect("duplicate metric: hoard_dead_letter_files");
+    )
+    .expect("duplicate metric: hoard_dead_letter_files")
+});
 
-    /// Health status: 1 = healthy, 0 = degraded.
-    pub static ref HEALTH_STATUS: Gauge = register_gauge!(
+/// Health status: 1 = healthy, 0 = degraded.
+pub static HEALTH_STATUS: LazyLock<Gauge> = LazyLock::new(|| {
+    register_gauge!(
         "hoard_health_status",
         "Health status (1 = healthy, 0 = degraded)"
-    ).expect("duplicate metric: hoard_health_status");
-}
+    )
+    .expect("duplicate metric: hoard_health_status")
+});
 
 /// Update all derived gauges and health status. Call after any state change.
 pub fn update_health_gauges(pending_count: u64, dead_letter_count: u64) {
@@ -149,55 +168,45 @@ async fn metrics_handler(
 ) -> Result<Response<Full<Bytes>>, Infallible> {
     match (req.method(), req.uri().path()) {
         (&Method::POST, "/flush") | (&Method::GET, "/flush") => {
-            if let Some(tx) = &flush_tx {
-                let _ = tx.send(());
+            if let Some(tx) = flush_tx {
+                if tx.send(()).is_err() {
+                    tracing::warn!("flush channel closed");
+                }
             }
             Ok(Response::builder()
                 .status(StatusCode::OK)
-                .body(Full::new(Bytes::from("flush triggered\n")))
-                .expect("failed to build flush response"))
+                .body(Full::new(Bytes::from(
+                    r#"{"status":"ok","message":"flush triggered"}"#,
+                )))
+                .unwrap())
         }
         (&Method::GET, "/health") => {
-            let pending = PENDING_FILES.get();
-            let dead = DEAD_LETTER_FILES.get();
-            let mismatches = ETAG_MISMATCH_TOTAL.get();
-            let failures = UPLOAD_FAILURES_TOTAL.get();
-
-            let degraded = pending > 50.0 || dead > 0.0 || mismatches > 0.0;
-            let status = if degraded { "degraded" } else { "ok" };
-            let code = if degraded {
-                StatusCode::SERVICE_UNAVAILABLE
-            } else {
-                StatusCode::OK
-            };
-
+            let degraded = HEALTH_STATUS.get() < 1.0;
             let body = serde_json::json!({
-                "status": status,
-                "pending_files": pending,
-                "dead_letter_files": dead,
-                "etag_mismatches": mismatches,
-                "upload_failures": failures,
+                "status": if degraded { "degraded" } else { "ok" },
+                "pending": PENDING_FILES.get(),
+                "dead_letter": DEAD_LETTER_FILES.get(),
             });
             Ok(Response::builder()
-                .status(code)
+                .status(if degraded {
+                    StatusCode::SERVICE_UNAVAILABLE
+                } else {
+                    StatusCode::OK
+                })
                 .header("Content-Type", "application/json")
-                .body(Full::new(Bytes::from(
-                    serde_json::to_string(&body).unwrap_or_default(),
-                )))
-                .expect("failed to build health response"))
+                .body(Full::new(Bytes::from(body.to_string())))
+                .unwrap())
         }
         _ => {
+            let mut buffer = vec![];
             let encoder = prometheus::TextEncoder::new();
             let metric_families = prometheus::gather();
-            let mut buffer = Vec::new();
-            encoder
-                .encode(&metric_families, &mut buffer)
-                .unwrap_or_default();
+            let _ = encoder.encode(&metric_families, &mut buffer);
             Ok(Response::builder()
-                .status(200)
+                .status(StatusCode::OK)
                 .header("Content-Type", "text/plain; version=0.0.4")
                 .body(Full::new(Bytes::from(buffer)))
-                .expect("failed to build metrics response"))
+                .unwrap())
         }
     }
 }
