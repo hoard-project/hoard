@@ -1,0 +1,79 @@
+# Prometheus Alertmanager rules for Hoard
+#
+# Load with:
+#   prometheus --alertmanager.rules-file=contrib/prometheus/alerts.yml
+#
+# Or in prometheus.yml:
+#   rule_files:
+#     - "hoard-alerts.yml"
+
+groups:
+  - name: hoard
+    interval: 30s
+    rules:
+      # ── Pending files accumulating ──
+      # More than 50 files waiting for upload for 10+ minutes means
+      # uploads are failing or the S3 backend is unreachable.
+      - alert: HoardPendingBacklog
+        expr: hoard_pending_files > 50
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Hoard has {{ $value }} files pending upload"
+          description: "Pending files are accumulating on {{ $labels.instance }}. This may indicate S3 connectivity issues or upload failures."
+          runbook: "Check hoard logs: journalctl -u nomad | grep hoard. Check S3 endpoint reachability. Check hoard_upload_failures_total."
+
+      # ── Dead-letter queue non-empty ──
+      # Files in dead-letter mean all retry attempts were exhausted.
+      # Operator must investigate and manually re-queue.
+      - alert: HoardDeadLetter
+        expr: hoard_dead_letter_files > 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Hoard has {{ $value }} files in dead-letter queue"
+          description: "Files on {{ $labels.instance }} could not be uploaded after {{ $value }} retry attempts. Check files in /var/lib/hoard/dead-letter/ and hoard logs."
+          runbook: "Inspect dead-letter files: ls /var/lib/hoard/dead-letter/. Check hoard_upload_failures_total for error patterns. Manually re-queue by moving files back to watch path."
+
+      # ── ETag mismatch — silent data corruption ──
+      - alert: HoardEtagMismatch
+        expr: hoard_etag_mismatch_total > 0
+        labels:
+          severity: critical
+        annotations:
+          summary: "Hoard detected ETag mismatch (data corruption)"
+          description: "Local file MD5 does not match S3 ETag on {{ $labels.instance }}. Data integrity is compromised."
+          runbook: "Compare local file checksums with S3 objects. Isolate affected files. Check for disk or memory errors (dmesg, ECC)."
+
+      # ── Health status degraded ──
+      - alert: HoardDegraded
+        expr: hoard_health_status == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Hoard is degraded on {{ $labels.instance }}"
+          description: "Health endpoint returned degraded. Check /health for details: pending={{ with query \"hoard_pending_files{instance='{{ $labels.instance }}'}\" }}{{ . | value }}{{ end }}, dead-letter={{ with query \"hoard_dead_letter_files{instance='{{ $labels.instance }}'}\" }}{{ . | value }}{{ end }}."
+
+      # ── Upload failure rate high ──
+      - alert: HoardHighUploadFailureRate
+        expr: rate(hoard_upload_failures_total[5m]) > 0.1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Hoard upload failure rate is elevated"
+          description: "Upload failure rate is {{ $value }} failures/sec on {{ $labels.instance }}. Check S3 backend and network."
+
+      # ── No BPF events for too long ──
+      - alert: HoardBpfSilent
+        expr: rate(hoard_ringbuf_events_total[15m]) == 0
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Hoard BPF ringbuf has been silent for 15 minutes"
+          description: "No BPF events received on {{ $labels.instance }} for 15 minutes. BPF program may have detached, or no file writes are occurring."
+          runbook: "Check BPF programs: bpftool prog list | grep hoard. Check dmesg for BPF verifier errors. Check if watch directory has active writes."

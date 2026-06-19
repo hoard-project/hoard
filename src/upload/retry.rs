@@ -82,6 +82,14 @@ pub fn write_dead_letter(dead_letter_dir: &Path, entry: &DeadLetter) -> Result<(
     Ok(())
 }
 
+/// Count files in the dead-letter directory.
+pub fn count_dead_letters(dir: &Path) -> u64 {
+    match std::fs::read_dir(dir) {
+        Ok(entries) => entries.filter_map(|e| e.ok()).count() as u64,
+        Err(_) => 0,
+    }
+}
+
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
 mod tests {

@@ -25,6 +25,13 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::Mutex;
 
+/// Update Prometheus gauges with current state.
+async fn update_gauges(pending: &Arc<Mutex<PersistentPending>>, dead_letter_dir: &std::path::Path) {
+    let pending_count = pending.lock().await.len() as u64;
+    let dead_count = crate::upload::retry::count_dead_letters(dead_letter_dir);
+    crate::metrics::update_health_gauges(pending_count, dead_count);
+}
+
 // ── State: Stopped ───────────────────────────────────────────────
 
 pub struct HoardStopped {
@@ -336,6 +343,7 @@ impl HoardReady {
                                 }
                             }
                             tracing::info!(count = to_upload.len(), "drain complete");
+                            update_gauges(&pending, &dead_letter_dir).await;
                         }
                         None => {
                             tracing::info!("trigger channel closed, shutting down");
@@ -360,6 +368,7 @@ impl HoardReady {
                         }
                     }
                     tracing::info!(count = to_upload.len(), "flush drain complete");
+                    update_gauges(&pending, &dead_letter_dir).await;
                 }
 
                 // ── GC timer ──
@@ -400,6 +409,7 @@ impl HoardReady {
                     if !to_upload.is_empty() {
                         tracing::info!(count = to_upload.len(), "periodic drain complete");
                     }
+                    update_gauges(&pending, &dead_letter_dir).await;
                 }
 
                 // ── SIGTERM / SIGINT → graceful drain and exit ──
@@ -418,6 +428,7 @@ impl HoardReady {
                         }
                     }
                     tracing::warn!(count = to_upload.len(), "SIGTERM drain complete, exiting");
+                    update_gauges(&pending, &dead_letter_dir).await;
                     break;
                 }
 
@@ -436,6 +447,7 @@ impl HoardReady {
                         }
                     }
                     tracing::warn!(count = to_upload.len(), "SIGINT drain complete, exiting");
+                    update_gauges(&pending, &dead_letter_dir).await;
                     break;
                 }
 
@@ -548,6 +560,7 @@ impl HoardReady {
                 tracing::error!(path = %path.display(), %e, "debounce failed");
             }
         }
+        crate::metrics::PENDING_FILES.set(pending.lock().await.len() as f64);
     }
 
     /// Upload with full retry+backoff+dead-letter. Used from the main loop.

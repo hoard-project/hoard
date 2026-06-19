@@ -83,6 +83,34 @@ lazy_static! {
         "hoard_etag_mismatch_total",
         "Total ETag mismatches (local MD5 ≠ S3 ETag)"
     ).expect("duplicate metric: hoard_etag_mismatch_total");
+
+    /// Current number of files pending upload.
+    pub static ref PENDING_FILES: Gauge = register_gauge!(
+        "hoard_pending_files",
+        "Current number of files waiting to be uploaded"
+    ).expect("duplicate metric: hoard_pending_files");
+
+    /// Current number of files in dead-letter queue.
+    pub static ref DEAD_LETTER_FILES: Gauge = register_gauge!(
+        "hoard_dead_letter_files",
+        "Current number of files in dead-letter queue"
+    ).expect("duplicate metric: hoard_dead_letter_files");
+
+    /// Health status: 1 = healthy, 0 = degraded.
+    pub static ref HEALTH_STATUS: Gauge = register_gauge!(
+        "hoard_health_status",
+        "Health status (1 = healthy, 0 = degraded)"
+    ).expect("duplicate metric: hoard_health_status");
+}
+
+/// Update all derived gauges and health status. Call after any state change.
+pub fn update_health_gauges(pending_count: u64, dead_letter_count: u64) {
+    PENDING_FILES.set(pending_count as f64);
+    DEAD_LETTER_FILES.set(dead_letter_count as f64);
+
+    let mismatches = ETAG_MISMATCH_TOTAL.get() as u64;
+    let degraded = pending_count > 50 || dead_letter_count > 0 || mismatches > 0;
+    HEALTH_STATUS.set(if degraded { 0.0 } else { 1.0 });
 }
 
 // ── Metrics server ─────────────────────────────────────────────────
@@ -129,11 +157,35 @@ async fn metrics_handler(
                 .body(Full::new(Bytes::from("flush triggered\n")))
                 .expect("failed to build flush response"))
         }
-        (&Method::GET, "/health") => Ok(Response::builder()
-            .status(StatusCode::OK)
-            .header("Content-Type", "application/json")
-            .body(Full::new(Bytes::from(r#"{"status":"ok"}"#)))
-            .expect("failed to build health response")),
+        (&Method::GET, "/health") => {
+            let pending = PENDING_FILES.get() as u64;
+            let dead = DEAD_LETTER_FILES.get() as u64;
+            let mismatches = ETAG_MISMATCH_TOTAL.get() as u64;
+            let failures = UPLOAD_FAILURES_TOTAL.get() as u64;
+
+            let degraded = pending > 50 || dead > 0 || mismatches > 0;
+            let status = if degraded { "degraded" } else { "ok" };
+            let code = if degraded {
+                StatusCode::SERVICE_UNAVAILABLE
+            } else {
+                StatusCode::OK
+            };
+
+            let body = serde_json::json!({
+                "status": status,
+                "pending_files": pending,
+                "dead_letter_files": dead,
+                "etag_mismatches": mismatches,
+                "upload_failures": failures,
+            });
+            Ok(Response::builder()
+                .status(code)
+                .header("Content-Type", "application/json")
+                .body(Full::new(Bytes::from(
+                    serde_json::to_string(&body).unwrap_or_default(),
+                )))
+                .expect("failed to build health response"))
+        }
         _ => {
             let encoder = prometheus::TextEncoder::new();
             let metric_families = prometheus::gather();
