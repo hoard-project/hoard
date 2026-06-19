@@ -201,7 +201,7 @@ impl NomadEventStream {
         // reqwest 0.13 is opaque (`impl Stream`), not nameable.
         let stream = resp.bytes_stream().map(
             |r: Result<Bytes, reqwest::Error>| -> std::io::Result<Bytes> {
-                r.map_err(|e| std::io::Error::other(e))
+                r.map_err(std::io::Error::other)
             },
         );
         let stream_reader = tokio_util::io::StreamReader::new(stream);
@@ -313,11 +313,11 @@ impl NomadEventStream {
 fn build_reqwest_client(_addr: &str) -> Result<reqwest::Client> {
     // SSE streams require no HTTP-level timeout (they're long-lived).
     // Only set a connect timeout to detect unreachable agents quickly.
-    Ok(reqwest::Client::builder()
+    reqwest::Client::builder()
         .connect_timeout(Duration::from_secs(5))
         .no_proxy()
         .build()
-        .context("Failed to build reqwest client")?)
+        .context("Failed to build reqwest client")
 }
 
 fn normalize_addr(addr: &str) -> String {

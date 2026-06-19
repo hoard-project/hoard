@@ -70,7 +70,7 @@ pub async fn run(args: RestoreArgs) -> Result<()> {
         // Detect mc alias from endpoint
         let ep = cfg.s3.endpoint.clone();
         let alias =
-            infer_alias(&ep.as_deref().unwrap_or("http://127.0.0.1:9000")).unwrap_or("guser");
+            infer_alias(ep.as_deref().unwrap_or("http://127.0.0.1:9000")).unwrap_or("guser");
 
         (cfg.s3.endpoint, bucket, prefix, alias.to_string())
     } else {
@@ -140,7 +140,7 @@ pub async fn run(args: RestoreArgs) -> Result<()> {
         tracing::info!(key = %obj.key, dest = %dest_path.display(), "restoring");
 
         let result = Command::new("mc")
-            .args(["cp", &s3_path, &dest_path.to_string_lossy().to_string()])
+            .args(["cp", &s3_path, dest_path.to_string_lossy().as_ref()])
             .output();
 
         match result {

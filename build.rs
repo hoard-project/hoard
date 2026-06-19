@@ -17,7 +17,7 @@ fn main() -> io::Result<()> {
             eprintln!("⚠  clang not found — BPF programs will not be compiled");
             eprintln!("   Install: apt install clang llvm libbpf-dev");
             // Write a stub so the build doesn't fail
-            std::fs::write(Path::new(&bpf_out), &[])?;
+            std::fs::write(Path::new(&bpf_out), [])?;
             println!("cargo:rustc-env=HOARD_BPF_OBJECT={bpf_out}");
             println!("cargo:rerun-if-changed={bpf_target}");
             return Ok(());
@@ -65,7 +65,7 @@ fn main() -> io::Result<()> {
         for line in stderr.lines().take(10) {
             eprintln!("   {}", line);
         }
-        std::fs::write(Path::new(&bpf_out), &[])?;
+        std::fs::write(Path::new(&bpf_out), [])?;
     }
 
     // Copy compiled BPF object to the standard runtime location.

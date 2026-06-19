@@ -112,7 +112,7 @@ impl BpfProgram {
         };
 
         // If the BPF object file is missing, degrade gracefully
-        let _meta = match std::fs::metadata(&bpf_path) {
+        match std::fs::metadata(&bpf_path) {
             Ok(m) if m.len() == 0 => {
                 tracing::warn!(path = %bpf_path, "BPF object is empty — eBPF disabled");
                 return Ok(Self {

@@ -1,20 +1,27 @@
+# Build artifacts
 /target/
-**/*.rs.bk
-*.pdb
 *.bpf.o
-.env
+
+# Binary artifacts (CI uploads)
+/hoard-linux-amd64
+*.xz
+
+# IDE
+.idea/
+.vscode/
 *.swp
 *.swo
-.vscode/
-.idea/
-Cargo.lock
+*~
 
-# Never commit real credentials — these files contain placeholders only
-# nomad/hoard-system.nomad is the production template
-# Use env vars or Nomad variables for secrets
+# macOS
+.DS_Store
+
+# Environment
+.env
+.env.local
+
+# Security: never commit real credentials
+# Only contrib/nomad/*.nomad holds template specs (placeholder credentials)
 *.nomad
 !contrib/nomad/*.nomad
 hoard.toml
-stress_test.sh
-test_*.py
-HOARD_V2_PLAN.md
