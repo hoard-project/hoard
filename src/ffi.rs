@@ -145,6 +145,31 @@ pub fn shutdown(fd: RawFd, how: libc::c_int) -> io::Result<()> {
     Ok(())
 }
 
+/// Set SO_RCVTIMEO on a socket fd (seconds).
+///
+/// # Safety (internal)
+/// `fd` must be a valid socket descriptor.
+pub fn set_recv_timeout(fd: RawFd, timeout_secs: u64) -> io::Result<()> {
+    let tv = libc::timeval {
+        tv_sec: timeout_secs as libc::time_t,
+        tv_usec: 0,
+    };
+    // SAFETY: fd is a valid socket
+    let ret = unsafe {
+        libc::setsockopt(
+            fd,
+            libc::SOL_SOCKET,
+            libc::SO_RCVTIMEO,
+            &tv as *const _ as *const libc::c_void,
+            std::mem::size_of::<libc::timeval>() as libc::socklen_t,
+        )
+    };
+    if ret != 0 {
+        return Err(io::Error::last_os_error());
+    }
+    Ok(())
+}
+
 // ── sendfile with EAGAIN resilience ──────────────────────────────
 
 /// Zero-copy file-to-socket pump using sendfile(2).

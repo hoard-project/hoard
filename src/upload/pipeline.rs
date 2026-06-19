@@ -281,17 +281,21 @@ impl UploadPipeline<HeaderWritten> {
 // ── BodyTransmitted state ────────────────────────────────────────
 
 impl UploadPipeline<BodyTransmitted> {
-    /// Shutdown write side and read HTTP response. Consumes SocketFd.
+    /// Read HTTP response. Consumes SocketFd.
+    ///
+    /// We do NOT call shutdown(SHUT_WR) here — MinIO needs time to
+    /// process the body (write to disk, compute ETag).  When the body
+    /// fits exactly within Content-Length and the header carries
+    /// `Connection: close`, MinIO will close the connection after
+    /// sending the response.  A 30-second SO_RCVTIMEO prevents
+    /// hanging if MinIO never responds.
     pub fn shutdown_and_read(self, sock: SocketFd) -> Result<UploadOutcome> {
         let raw_fd = sock.into_raw_fd();
 
-        // Give MinIO a moment to process the body before shutdown
-        std::thread::sleep(std::time::Duration::from_millis(200));
+        // 30s read timeout — enough for MinIO to flush even large objects
+        ffi::set_recv_timeout(raw_fd, 30)?;
 
-        // Shutdown write side (send EOF)
-        ffi::shutdown(raw_fd, libc::SHUT_WR)?;
-
-        // Read HTTP response with timeout
+        // Read HTTP response
         let mut buf = [0u8; 4096];
         let n = ffi::read(raw_fd, &mut buf)?;
         let response = String::from_utf8_lossy(&buf[..n]);

@@ -73,7 +73,7 @@ max_upload_retries = 5
 dead_letter_dir   = "/var/lib/hoard/dead-letter"
 
 [filter]
-extensions = ["db", "sqlite", "sqlite3", "wal", "log", "json", "csv"]
+extensions = ["db", "sqlite", "sqlite3", "wal", "log", "json", "csv", "parquet", "bin"]
 exclude    = ["*.tmp", "*.journal"]
 EOF
         destination = "local/hoard.toml"

@@ -21,7 +21,8 @@
 .env.local
 
 # Security: never commit real credentials
-# Only contrib/nomad/*.nomad holds template specs (placeholder credentials)
+# Only contrib/nomad/** holds template specs (placeholder credentials)
 *.nomad
 !contrib/nomad/*.nomad
+!contrib/nomad/**/*.nomad
 hoard.toml
