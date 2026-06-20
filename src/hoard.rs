@@ -898,8 +898,8 @@ impl HoardReady {
         if compression == Some("zstd") {
             let raw = std::fs::read(path)
                 .map_err(|e| format!("failed to read {}: {e}", path.display()))?;
-            let compressed = zstd::encode_all(&raw[..], 3)
-                .map_err(|e| format!("zstd compress: {e}"))?;
+            let compressed =
+                zstd::encode_all(&raw[..], 3).map_err(|e| format!("zstd compress: {e}"))?;
             let compressed_key = format!("{s3_key}.zst");
             let compressed_md5 = format!("{:x}", md5::compute(&compressed));
 
@@ -911,9 +911,7 @@ impl HoardReady {
             if !compressed_md5.eq_ignore_ascii_case(&etag) {
                 crate::metrics::ETAG_MISMATCH_TOTAL.inc();
                 crate::metrics::UPLOAD_IN_FLIGHT.dec();
-                return Err(format!(
-                    "ETag mismatch: local={compressed_md5} s3={etag}"
-                ));
+                return Err(format!("ETag mismatch: local={compressed_md5} s3={etag}"));
             }
 
             crate::metrics::UPLOAD_IN_FLIGHT.dec();
@@ -1121,7 +1119,15 @@ async fn run_initial_scan(
                 let _permit = permit.acquire().await;
                 let (prefix, retries, root, comp) =
                     HoardReady::resolve_upload_params(&reg, &watch_root, &path);
-                HoardReady::upload_file_once_scan(&s3, &path, &root, &prefix, comp.as_deref(), retries).await;
+                HoardReady::upload_file_once_scan(
+                    &s3,
+                    &path,
+                    &root,
+                    &prefix,
+                    comp.as_deref(),
+                    retries,
+                )
+                .await;
             });
         }
 
