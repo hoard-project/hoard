@@ -20,37 +20,37 @@ flowchart LR
 
 <div class="grid cards" markdown>
 
--   :material-bee:{ .lg .middle } **Dual VFS Hook**
+-   🐝 **Dual VFS Hook**
 
     ---
 
     `fentry/vfs_write` + `fentry/generic_perform_write` catches every buffered write on ext4, tmpfs, btrfs, xfs.
 
--   :material-flash:{ .lg .middle } **Zero-Copy Upload**
+-   ⚡ **Zero-Copy Upload**
 
     ---
 
     `sendfile(2)` from page cache straight to TLS socket. No userspace buffer. No `read()` syscall.
 
--   :material-database:{ .lg .middle } **SQLite Auto-Detect**
+-   🗄️ **SQLite Auto-Detect**
 
     ---
 
     WAL checkpoint for `.db` files before upload. Transparent pass-through for logs, JSON, CSV.
 
--   :material-target:{ .lg .middle } **BTF CO-RE**
+-   🎯 **BTF CO-RE**
 
     ---
 
     One BPF object, any kernel ≥ 5.5. Verified on 6.1 and 6.12. No per-kernel compilation.
 
--   :material-source-branch:{ .lg .middle } **Dual-Mode**
+-   🔀 **Dual-Mode**
 
     ---
 
     Standalone (Unix socket + periodic drain 30s) or Nomad system job (SSE events). Same core pipeline.
 
--   :material-chart-bar:{ .lg .middle } **Production Metrics**
+-   📊 **Production Metrics**
 
     ---
 
