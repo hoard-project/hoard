@@ -588,31 +588,75 @@ impl HoardReady {
                     if let Some(ref md) = meta_discovery {
                         match md.discover().await {
                             Ok(meta_vols) => {
-                                if !meta_vols.is_empty() {
-                                    // Merge: static config volumes + discovered meta volumes
-                                    let mut merged = meta_vols;
-                                    for v in registry.to_vec() {
-                                        if !v.name.starts_with("nomad-") {
-                                            merged.push(v);
+                                // Detect drift: which nomad volumes existed before but are gone now?
+                                let old_nomad: Vec<_> = registry.to_vec()
+                                    .into_iter()
+                                    .filter(|v| v.name.starts_with("nomad-"))
+                                    .collect();
+                                let new_names: std::collections::HashSet<_> = meta_vols
+                                    .iter()
+                                    .map(|v| v.name.clone())
+                                    .collect();
+
+                                let mut drift_drained = 0usize;
+                                for old_vol in &old_nomad {
+                                    if !new_names.contains(&old_vol.name) {
+                                        tracing::info!(
+                                            name=%old_vol.name,
+                                            base_dir=?old_vol.base_dir,
+                                            "Nomad alloc drifted: draining removed volume"
+                                        );
+                                        drift_drained += 1;
+                                        // Trigger final scan of the departed alloc dir.
+                                        if let Some(ref base) = old_vol.base_dir {
+                                            if base.is_dir() {
+                                                let s3_drain = s3.clone();
+                                                let reg_drain = registry.clone();
+                                                let filter_drain = filter.clone();
+                                                let cache_drain = inode_cache.clone();
+                                                let root_drain = watch_root.clone();
+                                                let base_drain = base.clone();
+                                                tokio::spawn(async move {
+                                                    let f = filter_drain.lock().await;
+                                                    match run_initial_scan(&root_drain, &f, &s3_drain, &reg_drain, &cache_drain).await {
+                                                        Ok(stats) => tracing::info!(?stats, dir=%base_drain.display(), "drift drain scan complete"),
+                                                        Err(e) => tracing::error!(%e, dir=%base_drain.display(), "drift drain scan failed"),
+                                                    }
+                                                });
+                                            }
                                         }
                                     }
-                                    registry.reload(merged);
-                                    tracing::info!(total = registry.len(), "volume registry updated with Nomad meta");
-
-                                    // Trigger a one-shot scan for newly discovered volumes.
-                                    let s3_scan = s3.clone();
-                                    let reg_scan = registry.clone();
-                                    let filter_scan = filter.clone();
-                                    let cache_scan = inode_cache.clone();
-                                    let root_scan = watch_root.clone();
-                                    tokio::spawn(async move {
-                                        let f = filter_scan.lock().await;
-                                        match run_initial_scan(&root_scan, &f, &s3_scan, &reg_scan, &cache_scan).await {
-                                            Ok(stats) => tracing::info!(?stats, "meta discovery scan complete"),
-                                            Err(e) => tracing::error!(%e, "meta discovery scan failed"),
-                                        }
-                                    });
                                 }
+
+                                // Merge: static config volumes + discovered meta volumes
+                                let mut merged = meta_vols;
+                                for v in registry.to_vec() {
+                                    if !v.name.starts_with("nomad-") {
+                                        merged.push(v);
+                                    }
+                                }
+                                let new_count = merged.iter().filter(|v| v.name.starts_with("nomad-")).count();
+                                registry.reload(merged);
+                                tracing::info!(
+                                    total = registry.len(),
+                                    nomad = new_count,
+                                    drifted = drift_drained,
+                                    "volume registry updated with Nomad meta"
+                                );
+
+                                // Trigger a one-shot scan for newly discovered volumes.
+                                let s3_scan = s3.clone();
+                                let reg_scan = registry.clone();
+                                let filter_scan = filter.clone();
+                                let cache_scan = inode_cache.clone();
+                                let root_scan = watch_root.clone();
+                                tokio::spawn(async move {
+                                    let f = filter_scan.lock().await;
+                                    match run_initial_scan(&root_scan, &f, &s3_scan, &reg_scan, &cache_scan).await {
+                                        Ok(stats) => tracing::info!(?stats, "meta discovery scan complete"),
+                                        Err(e) => tracing::error!(%e, "meta discovery scan failed"),
+                                    }
+                                });
                             }
                             Err(e) => tracing::warn!(%e, "Nomad meta refresh failed"),
                         }
