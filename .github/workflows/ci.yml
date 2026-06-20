@@ -95,20 +95,18 @@ jobs:
     name: "e2e (MinIO)"
     runs-on: ubuntu-22.04
     needs: build
-    services:
-      minio:
-        image: minio/minio:latest
-        env:
-          MINIO_ROOT_USER: minioadmin
-          MINIO_ROOT_PASSWORD: minioadmin123
-        ports:
-          - 9000:9000
-        options: >-
-          --name minio
-          server /data --console-address ":9001"
-
     steps:
       - uses: actions/checkout@v6
+
+      - name: Start MinIO
+        run: |
+          docker run -d --name minio \
+            -p 9000:9000 \
+            -e MINIO_ROOT_USER=minioadmin \
+            -e MINIO_ROOT_PASSWORD=minioadmin123 \
+            minio/minio:latest server /data --console-address ":9001"
+          sleep 3
+          docker logs minio --tail 5
 
       - name: Install mc CLI
         run: |
@@ -118,7 +116,7 @@ jobs:
           mc mb local/test-bucket 2>/dev/null || true
 
       - name: Download build artifacts
-        uses: actions/download-artifact@v6
+        uses: actions/download-artifact@v4
         with:
           name: hoard-x86_64-unknown-linux-gnu
 
