@@ -97,9 +97,25 @@ jobs:
   e2e:
     name: "e2e (MinIO)"
     runs-on: ubuntu-22.04
-    needs: build
     steps:
       - uses: actions/checkout@v6
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libssl-dev libelf-dev clang llvm sqlite3
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Build hoard (debug for speed)
+        run: |
+          cargo build
+          ls -lh target/debug/hoard
+          # Find BPF object
+          BPF=$(find target/debug/build -name hoard.bpf.o -type f | head -1)
+          cp "$BPF" /usr/lib/hoard/hoard.bpf.o
+          mkdir -p /usr/lib/hoard
+          echo "BPF: $(stat -c%s /usr/lib/hoard/hoard.bpf.o) bytes"
 
       - name: Start MinIO
         run: |
@@ -118,41 +134,9 @@ jobs:
           mc alias set local http://127.0.0.1:9000 minioadmin minioadmin123
           mc mb local/test-bucket 2>/dev/null || true
 
-      - name: Download build artifacts
-        uses: actions/download-artifact@v4
-        with:
-          name: hoard-x86_64-unknown-linux-gnu
-
-      - name: Setup hoard
+      - name: Setup hoard config
         run: |
-          # Dump everything to see what download-artifact gave us
-          echo "=== Workspace contents ==="
-          find . -type f -not -path './.git/*' | head -30
-          echo "=== File sizes ==="
-          find . -type f -not -path './.git/*' -exec ls -lh {} \; 2>/dev/null | head -20
-          # Find hoard binary — anywhere
-          HOARD=$(find . -name hoard -type f -not -path './.git/*' -executable | head -1)
-          if [ -z "$HOARD" ]; then
-            HOARD=$(find . -name hoard -type f -not -path './.git/*' | head -1)
-          fi
-          if [ -z "$HOARD" ]; then
-            echo "::error::hoard binary not found anywhere"
-            find . -type f -not -path './.git/*'
-            exit 1
-          fi
-          echo "Found hoard: $HOARD ($(stat -c%s "$HOARD") bytes)"
-          chmod +x "$HOARD"
-          ln -sf "$(realpath "$HOARD")" /usr/local/bin/hoard
-          # Find BPF
-          BPF=$(find . -name hoard.bpf.o -type f -not -path './.git/*' | head -1)
-          if [ -z "$BPF" ]; then
-            echo "::error::hoard.bpf.o not found"
-            exit 1
-          fi
-          echo "Found BPF: $BPF ($(stat -c%s "$BPF") bytes)"
-          mkdir -p /usr/lib/hoard /var/lib/hoard/volumes
-          cp "$BPF" /usr/lib/hoard/hoard.bpf.o
-          hoard --version || true
+          mkdir -p /var/lib/hoard/volumes
           cat > /tmp/e2e.toml << 'TOML'
           [daemon]
           mode = "standalone"
@@ -180,7 +164,7 @@ jobs:
 
       - name: Run hoard
         run: |
-          hoard --config /tmp/e2e.toml > /tmp/hoard-e2e.log 2>&1 &
+          target/debug/hoard --config /tmp/e2e.toml > /tmp/hoard-e2e.log 2>&1 &
           sleep 4
           if ! pgrep hoard > /dev/null; then
             echo "::error::Hoard failed to start"
