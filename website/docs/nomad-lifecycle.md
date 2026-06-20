@@ -8,7 +8,7 @@ failure modes, edge cases, and recovery procedures.
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                        Nomad 集群                            │
+│                        Nomad Cluster                        │
 │                                                             │
 │  Node A                          Node B                     │
 │  ┌──────────────────┐            ┌──────────────────┐       │
