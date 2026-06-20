@@ -4,15 +4,15 @@ on:
   push:
     tags: ["v*"]
 
-permissions: read-all
+permissions:
+  contents: write
+  id-token: write
+  attestations: write
 
 jobs:
   release:
     name: "release (${{ matrix.target }})"
     runs-on: ${{ matrix.runner }}
-    permissions:
-      contents: write
-      id-token: write
     strategy:
       fail-fast: false
       matrix:
