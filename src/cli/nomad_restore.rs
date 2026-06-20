@@ -163,7 +163,7 @@ pub async fn run(args: NomadRestoreArgs) -> Result<()> {
     tracing::info!(%list_path, "listing backup objects");
 
     let output = Command::new("mc")
-        .args(["ls", "--json", &list_path])
+        .args(["ls", "--recursive", "--json", &list_path])
         .output()
         .context("mc ls failed (is mc installed and configured?)")?;
 
@@ -272,7 +272,8 @@ fn parse_restore_objects(stdout: &[u8]) -> Result<Vec<RestoreObject>> {
         })?;
 
         let key = v["key"].as_str().unwrap_or("").to_string();
-        if key.is_empty() {
+        if key.is_empty() || key.ends_with('/') {
+            // Skip directory markers
             continue;
         }
         let local_path = PathBuf::from(&key);

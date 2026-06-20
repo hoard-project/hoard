@@ -128,6 +128,14 @@ pub struct Config {
     #[arg(long, env = "HOARD_NOMAD_TOKEN", hide_env_values = true)]
     pub nomad_token: Option<String>,
 
+    /// Enable Nomad meta auto-discovery (poll /v1/jobs for hoard_enabled volumes)
+    #[arg(long, env = "HOARD_NOMAD_META_ENABLED")]
+    pub nomad_meta_enabled: Option<bool>,
+
+    /// Nomad meta poll interval in seconds
+    #[arg(long, env = "HOARD_NOMAD_META_POLL_SECS")]
+    pub nomad_meta_poll_secs: Option<u64>,
+
     // ── Control socket ──
     /// Path for the hoardctl control socket
     #[arg(long, env = "HOARD_CONTROL_SOCKET")]
@@ -365,6 +373,12 @@ impl Config {
         }
         if let Some(ref t) = self.nomad_token {
             vc.nomad_token = Some(t.clone());
+        }
+        if let Some(e) = self.nomad_meta_enabled {
+            vc.nomad_meta_enabled = e;
+        }
+        if let Some(p) = self.nomad_meta_poll_secs {
+            vc.nomad_meta_poll_secs = p;
         }
         if let Some(ref s) = self.control_socket {
             vc.control_socket = s.clone();
