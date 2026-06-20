@@ -1,8 +1,16 @@
 # Changelog
 
-## v1.0.1 (2026-06-20)
+## v1.0.2 (2026-06-20)
 
-Nomad integration complete: meta auto-discovery + alloc drift handling.
+Nomad integration complete: full volume lifecycle (restore + drain + drift).
+
+### Volume Lifecycle
+- **Prestart restore**: `hoard nomad-restore` — auto-detects S3 prefix/dest from Nomad env
+- `--if-empty` guard: skip restore on first deploy (non-empty dir)
+- `--dry-run`, `--force` flags for testing and forced overwrite
+- **Poststop drain**: `POST /nomad-drain?timeout=N` — synchronous drain endpoint
+- 500ms eBPF debounce wait + pending gauge polling until 0 or timeout
+- **CLI flags**: `--nomad-meta-enabled`, `--nomad-meta-poll-secs` (was TOML-only)
 
 ### Nomad Integration
 - **Meta auto-discovery**: channel-driven Nomad API polling (timer → mpsc → select!)
@@ -18,10 +26,16 @@ Nomad integration complete: meta auto-discovery + alloc drift handling.
 - Registry correctly converges to static volumes only after drift
 - Drift metrics logged: `nomad`, `drifted` counts in registry update event
 
+### Documentation
+- `website/docs/nomad-lifecycle.md`: full lifecycle with edge cases (crash, split-brain, S3 unavailable, large files)
+- Complete Nomad job spec examples (prestart + poststop)
+- Meta key reference, timing reference, migration checklist
+
 ### Fixes
 - Self node ID extraction: `/v1/agent/self` → `stats.client.node_id` (was `config.NodeID`)
 - JobStub/Job/TaskGroup deserialization: individual `#[serde(rename)]` over `rename_all`
 - Registry deduplication: `nomad-` prefix filter prevents volume accumulation
+- `nomad-restore`: `mc ls --recursive` flag (was missing, returned directories)
 
 ## v1.0.0 (2026-06-20)
 
