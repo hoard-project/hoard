@@ -24,6 +24,7 @@ const config: Config = {
     mermaid: true,
   },
   themes: ['@docusaurus/theme-mermaid'],
+  plugins: ['./src/plugins/webpack-fix.js'],
 
   presets: [
     [
