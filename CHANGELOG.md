@@ -1,5 +1,28 @@
 # Changelog
 
+## v1.0.1 (2026-06-20)
+
+Nomad integration complete: meta auto-discovery + alloc drift handling.
+
+### Nomad Integration
+- **Meta auto-discovery**: channel-driven Nomad API polling (timer → mpsc → select!)
+- Nomad meta key format: underscore-separated (`hoard_enabled`) for HCL compatibility
+- Per-volume `base_dir` support: `ResolvedVolume` now carries optional alloc directory
+- `VolumeRegistry::resolve_with_root()`: tries volume base_dir before global watch_root
+- `run_initial_scan`: walks volume-specific base_dirs, bypasses FileFilter for them
+- Auto-scan trigger: one-shot scan fires immediately after meta volumes discovered
+
+### Drift Handling
+- Detects removed Nomad volumes by comparing old vs new meta set on each poll
+- Triggers final drain scan of departed alloc directory before removing from registry
+- Registry correctly converges to static volumes only after drift
+- Drift metrics logged: `nomad`, `drifted` counts in registry update event
+
+### Fixes
+- Self node ID extraction: `/v1/agent/self` → `stats.client.node_id` (was `config.NodeID`)
+- JobStub/Job/TaskGroup deserialization: individual `#[serde(rename)]` over `rename_all`
+- Registry deduplication: `nomad-` prefix filter prevents volume accumulation
+
 ## v1.0.0 (2026-06-20)
 
 First stable release. Production-validated on dual-node Nomad cluster.
