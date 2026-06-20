@@ -41,15 +41,18 @@ jobs:
           # --- Binary ---
           strip target/release/hoard
           mv target/release/hoard "target/release/${{ matrix.artifact_name }}"
-          sha256sum "target/release/${{ matrix.artifact_name }}" > "target/release/${{ matrix.artifact_name }}.sha256"
+          # Hash from inside dir so .sha256 contains only the filename
+          cd target/release
+          sha256sum "${{ matrix.artifact_name }}" > "${{ matrix.artifact_name }}.sha256"
 
           # --- BPF object (compiled by build.rs) ---
-          BPF_OBJ=$(find target/release/build -name hoard.bpf.o -type f | head -1)
+          BPF_OBJ=$(find build -name hoard.bpf.o -type f | head -1)
           echo "BPF object: $BPF_OBJ ($(stat -c%s "$BPF_OBJ") bytes)"
-          cp "$BPF_OBJ" "target/release/${{ matrix.artifact_name }}.bpf.o"
-          sha256sum "target/release/${{ matrix.artifact_name }}.bpf.o" > "target/release/${{ matrix.artifact_name }}.bpf.o.sha256"
+          cp "$BPF_OBJ" "${{ matrix.artifact_name }}.bpf.o"
+          sha256sum "${{ matrix.artifact_name }}.bpf.o" > "${{ matrix.artifact_name }}.bpf.o.sha256"
 
           # --- Summary ---
+          cd ..
           ls -lh target/release/${{ matrix.artifact_name }}*
 
       - name: Upload to release
