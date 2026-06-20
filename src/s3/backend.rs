@@ -381,7 +381,7 @@ fn extract_tag(xml: &str, tag: &str) -> String {
     xml[start..end].to_string()
 }
 
-/// Extract host[:port] from an S3 endpoint URL for SigV4 header signing.
+/// Extract `host[:port]` from an S3 endpoint URL for SigV4 header signing.
 fn extract_host(endpoint: &str) -> String {
     endpoint
         .trim_start_matches("http://")

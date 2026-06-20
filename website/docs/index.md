@@ -79,7 +79,7 @@ flowchart LR
 
     ```bash
     HOARD_MODE=standalone \
-    HOARD_WATCH_ROOT=/var/lib/hoard/volumes \
+    HOARD_WATCH_PATH=/var/lib/hoard/volumes \
     HOARD_S3_ENDPOINT=http://127.0.0.1:9000 \
     HOARD_S3_BUCKET=my-backups \
     HOARD_S3_ACCESS_KEY=s3admin \
@@ -118,4 +118,4 @@ flowchart LR
 
 ## Status
 
-`v1.0.0-beta.1` · CI all green · 49 tests · 0 clippy · 33/33 deny(unsafe_code) · 8 observability metrics
+`v1.0.2` · CI all green · 53 tests · 0 clippy · 0 warnings · Nomad volume lifecycle

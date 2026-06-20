@@ -54,7 +54,9 @@ impl MetaDiscovery {
 
         let mut resolved = Vec::with_capacity(volumes.len());
         for dv in volumes {
-            let s3_prefix = dv.s3_prefix.unwrap_or_else(|| format!("backup/{}", dv.job_id));
+            let s3_prefix = dv
+                .s3_prefix
+                .unwrap_or_else(|| format!("backup/{}", dv.job_id));
             let ttl = dv.ttl.unwrap_or_else(|| "30d".to_string());
 
             let base_dir = dv.alloc_dir.map(std::path::PathBuf::from);

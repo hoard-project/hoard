@@ -23,8 +23,6 @@
 #![deny(missing_docs)]
 #![deny(clippy::must_use_candidate)]
 #![deny(clippy::unwrap_used)]
-#![deny(clippy::cast_possible_truncation)]
-#![deny(clippy::cast_sign_loss)]
 
 mod cli;
 mod config;

@@ -3,44 +3,7 @@
 !!! tip "Priority"
     CLI flag > env var > TOML value > default
 
-## v1 Quick config
-
-```toml
-[daemon]
-mode = "standalone"
-
-[watch]
-path = "/var/lib/hoard/volumes"
-
-[s3]
-endpoint   = "http://127.0.0.1:9000"
-bucket     = "my-backups"
-access_key = "${S3_ACCESS_KEY}"
-secret_key = "${S3_SECRET_KEY}"
-
-[gc]
-interval_secs = 21600
-ttl_days      = 30
-
-[filter]
-extensions = ["db", "sqlite", "sqlite3", "log", "json", "csv"]
-```
-
-## v2: StorageClass + Volume model
-
-!!! note
-    v2 config uses `conf.d/` directory hot-reload. Place `.toml` files in
-    `/etc/hoard/conf.d/` — Hoard watches this directory and reloads on change.
-
-### Concepts
-
-| Concept | Analogous to | Purpose |
-|---------|-------------|---------|
-| **StorageClass** | K8s StorageClass | Reusable policy (TTL, retries, compression) |
-| **Volume** | K8s PVC | Path glob → StorageClass + S3 prefix |
-| **defaults** | StorageClass fallback | Applied when no volume matches |
-
-### Example
+## v2 TOML schema
 
 ```toml
 [hoard]
@@ -49,21 +12,44 @@ version = 2
 [daemon]
 mode = "standalone"
 service = "production"
+metrics_addr = "0.0.0.0:9150"
 
 [watch]
-path = "/var/lib/hoard/volumes"
+paths = ["/var/lib/hoard/volumes"]
 
 [s3]
 endpoint   = "http://s3:9000"
+region     = "us-east-1"
 bucket     = "backups"
 access_key = "${S3_ACCESS_KEY}"
 secret_key = "${S3_SECRET_KEY}"
-prefix     = "hoard"
+no_sign    = false
 
 [defaults]
-ttl = "7d"
-retries = 3
-extensions = ["*"]
+prefix      = "hoard"
+ttl         = "7d"
+retries     = 3
+extensions  = ["*"]
+exclude     = []
+compression = "zstd"
+encryption  = false
+on_stop     = "drain"
+on_delete   = "keep"
+
+[gc]
+interval_secs = 21600
+ttl_days      = 30
+
+[resilience]
+pending_db         = "/var/lib/hoard/pending.db"
+max_upload_retries = 5
+dead_letter_dir    = "/var/lib/hoard/dead-letter"
+
+[nomad]
+addr       = "http://127.0.0.1:4646"
+token      = ""
+meta_enabled  = false
+meta_poll_secs = 30
 
 [[storage_classes]]
 name = "long-term"
@@ -97,9 +83,17 @@ storage_class = "short-term"
 s3_prefix = "misc"
 ```
 
+### Concepts
+
+| Concept | Analogous to | Purpose |
+|---------|-------------|---------|
+| **StorageClass** | K8s StorageClass | Reusable policy (TTL, retries, compression) |
+| **Volume** | K8s PVC | Path glob → StorageClass + S3 prefix |
+| **defaults** | StorageClass fallback | Applied when no volume matches |
+
 ### Resolution
 
-When a file is written at `.../volumes/postgres/schema/v2.sql`:
+When a file is written at `volumes/postgres/schema/v2.sql`:
 
 1. Match volumes in declaration order
 2. `postgres/**` matches → class `long-term`, prefix `databases/postgres`
@@ -109,13 +103,27 @@ More specific globs win. Declaration order breaks ties.
 
 ## Field reference
 
+### `[hoard]`
+
+| Field | Type | Required |
+|-------|------|----------|
+| `version` | u32 | **yes** — must be `2` |
+| `conf_dirs` | `[string]` | no — extra config directories |
+
 ### `[daemon]`
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `mode` | `"standalone" \| "nomad"` | `"standalone"` | Runtime mode |
+| `mode` | `"standalone"` \| `"nomad"` | `"standalone"` | Runtime mode |
 | `service` | string | `"default"` | Service name (socket path) |
-| `metrics_addr` | `host:port` | `0.0.0.0:9150` | Metrics endpoint |
+| `metrics_addr` | `host:port` | `0.0.0.0:9150` | Prometheus endpoint |
+| `control_socket` | path | `/run/hoard/default.sock` | Unix socket for hoardctl |
+
+### `[watch]`
+
+| Field | Type | Required |
+|-------|------|----------|
+| `paths` | `[string]` | **yes** — at least one watch directory |
 
 ### `[s3]`
 
@@ -123,11 +131,24 @@ More specific globs win. Declaration order breaks ties.
 |-------|------|---------|----------|
 | `endpoint` | URL | — | **yes** |
 | `bucket` | string | — | **yes** |
-| `region` | string | `us-east-1` | no |
-| `access_key` | string | — | no |
-| `secret_key` | string | — | no |
-| `prefix` | string | `""` | no |
+| `region` | string | `""` | no |
+| `access_key` | string | `""` | no |
+| `secret_key` | string | `""` | no |
 | `no_sign` | bool | `false` | no |
+
+### `[defaults]`
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `prefix` | string | `""` | S3 key prefix for unmatched volumes |
+| `ttl` | duration | `"30d"` | Retention before GC |
+| `retries` | u32 | `5` | Upload retry count |
+| `extensions` | `[string]` | — | Watch file extensions (e.g. `["db","wal"]`) |
+| `exclude` | `[string]` | — | Patterns to exclude |
+| `compression` | `"zstd"` \| none | none | Apply zstd compression |
+| `encryption` | bool | `false` | Apply encryption |
+| `on_stop` | `"drain"` \| `"skip"` | `"drain"` | Action when volume is removed |
+| `on_delete` | `"keep"` \| `"purge"` | `"keep"` | Action when watched file is deleted |
 
 ### `[gc]`
 
@@ -136,22 +157,7 @@ More specific globs win. Declaration order breaks ties.
 | `interval_secs` | u64 | `21600` (6h) |
 | `ttl_days` | u64 | `30` |
 
-### `[filter]`
-
-| Field | Type | Default |
-|-------|------|---------|
-| `extensions` | `[string]` | `["*"]` |
-| `exclude` | `[string]` | `[]` |
-
-### `[resilience]`
-
-| Field | Type | Default |
-|-------|------|---------|
-| `pending_db` | path | `/var/lib/hoard/pending.db` |
-| `max_upload_retries` | u32 | `5` |
-| `dead_letter_dir` | path | `/var/lib/hoard/dead-letter` |
-
-### StorageClass (v2)
+### StorageClass
 
 | Field | Type | Default | Required |
 |-------|------|---------|----------|
@@ -161,7 +167,7 @@ More specific globs win. Declaration order breaks ties.
 | `compression` | `"zstd"` \| none | none | no |
 | `encryption` | bool | `false` | no |
 
-### Volume (v2)
+### Volume
 
 | Field | Type | Required |
 |-------|------|----------|
@@ -173,8 +179,25 @@ More specific globs win. Declaration order breaks ties.
 | `exclude` | `[string]` | no |
 | `ttl` | duration | no |
 | `retries` | u32 | no |
-| `on_stop` | `"drain" \| "keep" \| "purge"` | no |
-| `on_delete` | `"keep" \| "purge"` | no |
+| `on_stop` | `"drain"` \| `"skip"` | no |
+| `on_delete` | `"keep"` \| `"purge"` | no |
+
+### `[resilience]`
+
+| Field | Type | Default |
+|-------|------|---------|
+| `pending_db` | path | `/var/lib/hoard/pending.db` |
+| `max_upload_retries` | u32 | `5` |
+| `dead_letter_dir` | path | `/var/lib/hoard/dead-letter` |
+
+### `[nomad]`
+
+| Field | Type | Default |
+|-------|------|---------|
+| `addr` | URL | `http://127.0.0.1:4646` |
+| `token` | string | `""` |
+| `meta_enabled` | bool | `false` |
+| `meta_poll_secs` | u64 | `30` |
 
 ## Config file discovery
 
@@ -183,4 +206,4 @@ More specific globs win. Declaration order breaks ties.
 3. `/etc/hoard/hoard.toml`
 4. `./hoard.toml` (working directory)
 
-v2 additionally watches `/etc/hoard/conf.d/*.toml`.
+v2 additionally watches `/etc/hoard/conf.d/*.toml` for hot-reload of `[[storage_classes]]` and `[[volumes]]`.

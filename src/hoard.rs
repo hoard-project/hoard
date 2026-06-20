@@ -704,8 +704,8 @@ async fn reload_config(
         toml::from_str(&expanded).context("parsing v2 config on SIGHUP")?;
 
     // ── Reload file filter from v2 defaults ──
-    let has_filter = v2_config.defaults.extensions.is_some()
-        || v2_config.defaults.exclude.is_some();
+    let has_filter =
+        v2_config.defaults.extensions.is_some() || v2_config.defaults.exclude.is_some();
     if has_filter {
         let patterns: Vec<String> = v2_config
             .defaults
@@ -1086,7 +1086,8 @@ async fn run_initial_scan(
             let permit = semaphore.clone();
             join_set.spawn(async move {
                 let _permit = permit.acquire().await;
-                let (prefix, retries, root) = HoardReady::resolve_upload_params(&reg, &watch_root, &path);
+                let (prefix, retries, root) =
+                    HoardReady::resolve_upload_params(&reg, &watch_root, &path);
                 HoardReady::upload_file_once_scan(&s3, &path, &root, &prefix, retries).await;
             });
         }

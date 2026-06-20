@@ -215,7 +215,9 @@ async fn metrics_handler(
                     tokio::time::sleep(std::time::Duration::from_millis(200)).await;
                 };
 
+                #[allow(clippy::cast_possible_truncation)]
                 let wait_ms = start.elapsed().as_millis() as u64;
+                #[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)]
                 let body = serde_json::json!({
                     "status": if final_pending < 1.0 { "ok" } else { "timeout" },
                     "pending": final_pending as u64,

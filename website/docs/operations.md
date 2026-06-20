@@ -2,46 +2,37 @@
 
 ## Restore files
 
-### List S3 contents
-
 ```bash
-# Via S3 client (mc)
+# List S3 contents via mc CLI
 mc ls local/hoard-backups/hoard/
 mc ls -r local/hoard-backups/hoard/
 
-# Via control socket
-echo '{"list":"/var/lib/hoard/volumes"}' | nc -U /var/run/hoard.sock | jq .
-```
-
-### Restore single file
-
-```bash
+# Restore single file
 mc cp local/hoard-backups/hoard/path/to/file.txt ./restored.txt
-```
 
-### Bulk restore
-
-```bash
+# Bulk restore
 mc cp -r local/hoard-backups/hoard/ ./restore-root/
-# OR via control socket for specific volume
-echo '{"restore":"/var/lib/hoard/volumes/postgres/schema/v2.sql"}' \
-  | nc -U /var/run/hoard.sock | jq .
 ```
 
 ## Metrics
 
-Endpoint: `http://0.0.0.0:9150/metrics`
+Endpoint: `http://0.0.0.0:9150/metrics` (Prometheus OpenMetrics format)
 
 | Metric | Type | Description |
 |--------|------|-------------|
-| `hoard_uploads_total` | Counter | Total uploads (success + retry) |
-| `hoard_upload_errors_total` | Counter | Failed uploads |
+| `hoard_upload_total` | Counter | Total uploads attempted |
 | `hoard_upload_bytes_total` | Counter | Total bytes uploaded |
+| `hoard_upload_in_flight` | Gauge | Uploads currently in progress |
 | `hoard_upload_duration_seconds` | Histogram | Upload latency distribution |
+| `hoard_upload_failures_total` | Counter | Failed uploads |
+| `hoard_etag_mismatch_total` | Counter | ETag verification failures |
 | `hoard_pending_files` | Gauge | Files in pending queue |
-| `hoard_dead_letter_total` | Gauge | Files in dead-letter directory |
-| `hoard_bpf_events_total` | Counter | BPF events received |
-| `hoard_pending_db_size` | Gauge | SQLite pending database size |
+| `hoard_dead_letter_files` | Gauge | Files in dead-letter directory |
+| `hoard_ringbuf_events_total` | Counter | BPF ring buffer events received |
+| `hoard_gc_cycles_total` | Counter | GC cycles completed |
+| `hoard_gc_deleted_total` | Counter | Objects deleted by GC |
+| `hoard_gc_errors_total` | Counter | GC errors |
+| `hoard_health_status` | Gauge | 1=ok, 0=degraded |
 
 ### Alert rules
 
@@ -50,7 +41,7 @@ groups:
   - name: hoard
     rules:
       - alert: HoardUploadErrorRateHigh
-        expr: rate(hoard_upload_errors_total[5m]) / rate(hoard_uploads_total[5m]) > 0.05
+        expr: rate(hoard_upload_failures_total[5m]) / rate(hoard_upload_total[5m]) > 0.05
         for: 10m
         annotations:
           summary: "Upload error rate above 5%"
@@ -62,35 +53,36 @@ groups:
           summary: "Pending queue over 1000 files"
 
       - alert: HoardDeadLetterQueueGrowing
-        expr: hoard_dead_letter_total > 10
+        expr: hoard_dead_letter_files > 10
         for: 5m
         annotations:
           summary: "Dead-letter queue has 10+ files"
 
       - alert: HoardBPFNotReceiving
-        expr: rate(hoard_bpf_events_total[5m]) == 0
+        expr: rate(hoard_ringbuf_events_total[5m]) == 0
         for: 10m
         annotations:
           summary: "No BPF events in last 5 minutes"
 
-      - alert: HoardUploadsFailing
-        expr: increase(hoard_uploads_total[5m]) == 0
-        for: 10m
+      - alert: HoardHealthDegraded
+        expr: hoard_health_status < 1
+        for: 2m
         annotations:
-          summary: "No successful uploads in last 5 minutes"
+          summary: "Hoard daemon is degraded"
 ```
 
 ## Garbage collection
 
-```bash
-# Trigger manually via control socket
-echo '{"gc":{}}' | nc -U /var/run/hoard.sock
-
-# Response: {"gc": {"deleted": 15, "errors": 0}}
-```
-
 GC runs on a schedule (default every 6 hours). Removes S3 objects older
-than `ttl_days` (default 30). Dry-run mode available via `--gc-dry-run`.
+than `ttl_days` (default 30).
+
+```bash
+# Trigger via control socket (standalone mode)
+echo flush | nc -U /run/hoard/default.sock
+
+# Trigger via HTTP (nomad mode / metrics server)
+curl -X POST http://127.0.0.1:9150/flush
+```
 
 ## Dead-letter queue
 
@@ -101,11 +93,8 @@ dead-letter directory (default `/var/lib/hoard/dead-letter`).
 # List dead-letter files
 ls /var/lib/hoard/dead-letter/
 
-# Reprocess a dead-letter file
-echo '{"reprocess":"dead-letter.txt"}' | nc -U /var/run/hoard.sock
-
-# Bulk reprocess
-echo '{"reprocess_all":{}}' | nc -U /var/run/hoard.sock
+# Manually re-upload a dead-letter file
+mc cp /var/lib/hoard/dead-letter/bad-file.txt local/hoard-backups/hoard/
 ```
 
 ## Troubleshooting
@@ -116,7 +105,7 @@ echo '{"reprocess_all":{}}' | nc -U /var/run/hoard.sock
 2. Verify kernel ≥ 5.5: `uname -r`
 3. Check BTF available: `ls /sys/kernel/btf/vmlinux`
 4. Increase log verbosity: `RUST_LOG=debug hoard`
-5. Verify watch path has `inotify` + BPF perms
+5. Verify watch path exists and is writable
 
 ### Upload failing
 
@@ -124,22 +113,18 @@ echo '{"reprocess_all":{}}' | nc -U /var/run/hoard.sock
 2. Verify bucket exists: `mc ls local/`
 3. Check credentials: `mc admin info local`
 4. Increase `RUST_LOG=debug` for SigV4 signing details
-5. Try `no_sign = true` for local S3 dev mode
+5. Try `no_sign = true` for local S3 (MinIO) dev mode
 
 ### Pending queue growing
 
 1. Check S3 upload latency: `hoard_upload_duration_seconds`
-2. Increase drain frequency via config
+2. Trigger manual flush: `curl -X POST http://127.0.0.1:9150/flush`
 3. Check network between node and S3
 4. Verify S3 rate limits not hit
 
 ### BPF events not arriving
 
 ```bash
-# Debug BPF hook status
-hoard --debug-bpf
-# Output: hooks=2 loaded=2 buffer=ringbuffer capacity=262144
-
 # Check BPF system requirements
 bpftool prog list | grep -A5 hoard
 ```

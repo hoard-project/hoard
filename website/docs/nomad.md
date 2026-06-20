@@ -67,16 +67,14 @@ job "hoard" {
       template {
         data = <<EOF
 HOARD_MODE=nomad
-HOARD_WATCH_ROOT={{ env "NOMAD_ALLOC_DIR" }}/volumes
+HOARD_WATCH_PATH={{ env "NOMAD_ALLOC_DIR" }}/volumes
 HOARD_S3_ENDPOINT=http://s3.service.consul:9000
 HOARD_S3_BUCKET=hoard-backups
 HOARD_S3_ACCESS_KEY={{ with secret "kv/data/s3" }}{{ .Data.data.access_key }}{{ end }}
 HOARD_S3_SECRET_KEY={{ with secret "kv/data/s3" }}{{ .Data.data.secret_key }}{{ end }}
 HOARD_METRICS_ADDR=0.0.0.0:9150
-HOARD_DEBOUNCE_MS=100
-HOARD_DRAIN_INTERVAL=30
+HOARD_WATCH_PATTERNS=*
 HOARD_S3_NO_SIGN=true
-HOARD_NODE_HOST={{ env "node.unique.name" }}
 EOF
         destination = "secrets/.env"
         env         = true

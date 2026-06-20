@@ -67,7 +67,9 @@ pub struct NomadRestoreArgs {
 /// Run the nomad-restore subcommand.
 pub async fn run(args: NomadRestoreArgs) -> Result<()> {
     // ── Resolve S3 endpoint ──
-    let endpoint = args.s3_endpoint.or_else(|| std::env::var("HOARD_S3_ENDPOINT").ok());
+    let endpoint = args
+        .s3_endpoint
+        .or_else(|| std::env::var("HOARD_S3_ENDPOINT").ok());
     let bucket = args
         .s3_bucket
         .or_else(|| std::env::var("HOARD_S3_BUCKET").ok())
@@ -96,11 +98,9 @@ pub async fn run(args: NomadRestoreArgs) -> Result<()> {
     };
 
     // ── Resolve destination ──
-    let dest = args.dest.or_else(|| {
-        std::env::var("NOMAD_ALLOC_DIR")
-            .ok()
-            .map(PathBuf::from)
-    });
+    let dest = args
+        .dest
+        .or_else(|| std::env::var("NOMAD_ALLOC_DIR").ok().map(PathBuf::from));
 
     let dest = match dest {
         Some(d) => d,
@@ -134,14 +134,7 @@ pub async fn run(args: NomadRestoreArgs) -> Result<()> {
     if let (Some(ref ak), Some(ref sk), Some(ref ep)) = (&access_key, &secret_key, &endpoint) {
         // Register or update mc alias
         let result = Command::new("mc")
-            .args([
-                "alias",
-                "set",
-                mc_alias,
-                ep,
-                ak,
-                sk,
-            ])
+            .args(["alias", "set", mc_alias, ep, ak, sk])
             .output();
 
         match result {

@@ -1,6 +1,6 @@
 //! Standalone test binary for the Hoard upload pipeline.
 //!
-//! Usage: hoard-test-upload --file <path> --url <http://host:port/bucket/key>
+//! Usage: `hoard-test-upload --file PATH --url SCHEME://HOST:PORT/BUCKET/KEY`
 
 #![deny(unsafe_code)]
 

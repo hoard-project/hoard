@@ -39,7 +39,7 @@ pub struct RestoreArgs {
     dry_run: bool,
 }
 
-/// Minimal TOML fragment for restore (only needs [s3] section).
+/// Minimal TOML fragment for restore (only needs `[s3]` section).
 #[derive(Deserialize)]
 struct RestoreConfig {
     s3: S3Section,

@@ -3,7 +3,7 @@
 //!
 //! Pure Rust implementation without external AWS SDK crates.
 //! Algorithm matches the standard SigV4 presigned URL spec:
-//! https://docs.aws.amazon.com/AmazonS3/latest/API/sigv4-query-string-auth.html
+//! <https://docs.aws.amazon.com/AmazonS3/latest/API/sigv4-query-string-auth.html>
 
 #![deny(unsafe_code)]
 

@@ -486,7 +486,7 @@ pub fn load_conf_dir(dir: &Path, v2: &mut ConfigV2) -> Result<()> {
     Ok(())
 }
 
-/// Partial TOML for conf.d files — only [[storage_classes]] and [[volumes]].
+/// Partial TOML for `conf.d/` files — only `[[storage_classes]]` and `[[volumes]]`.
 #[derive(Deserialize, Debug, Default, Clone)]
 #[serde(deny_unknown_fields)]
 struct ConfFilePartial {

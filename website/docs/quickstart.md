@@ -30,7 +30,7 @@ Verify:
 
 ```bash
 hoard --version
-# hoard 1.0.0-beta.1
+# hoard 1.0.2
 ```
 
 ## 2. Start local S3 (optional)
@@ -52,7 +52,7 @@ mkdir -p /var/lib/hoard/volumes
 
 ```bash
 HOARD_MODE=standalone \
-HOARD_WATCH_ROOT=/var/lib/hoard/volumes \
+HOARD_WATCH_PATH=/var/lib/hoard/volumes \
 HOARD_S3_ENDPOINT=http://127.0.0.1:9000 \
 HOARD_S3_BUCKET=hoard-backups \
 HOARD_S3_ACCESS_KEY=s3admin \

@@ -94,7 +94,11 @@ impl VolumeRegistry {
     /// Resolve a file path to its volume config and the effective root.
     /// The root is the volume's `base_dir` (if set and the file is under it),
     /// otherwise `watch_root`.
-    pub fn resolve_with_root(&self, file_path: &Path, watch_root: &Path) -> (ResolvedVolume, PathBuf) {
+    pub fn resolve_with_root(
+        &self,
+        file_path: &Path,
+        watch_root: &Path,
+    ) -> (ResolvedVolume, PathBuf) {
         let guard = self
             .volumes
             .read()
@@ -104,7 +108,11 @@ impl VolumeRegistry {
         for vol in guard.iter() {
             let root = if let Some(ref base) = vol.base_dir {
                 if let Ok(rel) = file_path.strip_prefix(base) {
-                    let rel = rel.to_string_lossy().to_string().trim_start_matches("./").to_string();
+                    let rel = rel
+                        .to_string_lossy()
+                        .to_string()
+                        .trim_start_matches("./")
+                        .to_string();
                     if matches_glob(&vol.match_glob, &rel) {
                         return (vol.clone(), base.clone());
                     }
@@ -139,7 +147,10 @@ impl VolumeRegistry {
         }
 
         // Ultimate fallback: last volume (catch-all).
-        let last = guard.last().cloned().expect("VolumeRegistry must have at least one volume");
+        let last = guard
+            .last()
+            .cloned()
+            .expect("VolumeRegistry must have at least one volume");
         (last, watch_root.to_path_buf())
     }
 }

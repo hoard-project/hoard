@@ -224,14 +224,19 @@ impl NomadClient {
 
             if is_local {
                 // Find the running alloc on this node to get its directory
-                let alloc_dir = self.get_allocations(&stub.id).await.ok().and_then(|allocs| {
-                    allocs.iter()
-                        .find(|a| a.node_id == self_node && a.client_status == "running")
-                        .map(|a| {
-                            // Nomad convention: {data_dir}/alloc/{alloc_id}/alloc/
-                            format!("/opt/nomad/data/alloc/{}/alloc", a.id)
-                        })
-                });
+                let alloc_dir = self
+                    .get_allocations(&stub.id)
+                    .await
+                    .ok()
+                    .and_then(|allocs| {
+                        allocs
+                            .iter()
+                            .find(|a| a.node_id == self_node && a.client_status == "running")
+                            .map(|a| {
+                                // Nomad convention: {data_dir}/alloc/{alloc_id}/alloc/
+                                format!("/opt/nomad/data/alloc/{}/alloc", a.id)
+                            })
+                    });
 
                 let vol = DiscoveredVolume {
                     job_id: stub.id.clone(),

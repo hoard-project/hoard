@@ -1,9 +1,9 @@
 //! `hoardctl` CLI — control tool for the Hoard daemon.
 //!
 //! Usage:
-//!   hoardctl flush <service>        Trigger immediate upload
-//!   hoardctl status <service>       Query daemon status
-//!   hoardctl restore --key=<s3> --output=<path>  Restore from S3
+//!   `hoardctl flush SERVICE`       — Trigger immediate upload
+//!   `hoardctl status SERVICE`      — Query daemon status
+//!   `hoardctl restore --key=S3_KEY --output=PATH`  — Restore from S3
 
 #![deny(unsafe_code)]
 

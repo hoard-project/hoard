@@ -7,8 +7,8 @@
 //! 3. CLI flags / env vars (highest priority)
 #![deny(unsafe_code)]
 
-mod raw;
 pub mod env;
+mod raw;
 pub mod registry;
 pub mod v2;
 
@@ -138,7 +138,6 @@ pub struct Config {
     /// Metrics listen address
     #[arg(long, env = "HOARD_METRICS_ADDR")]
     pub metrics_addr: Option<String>,
-
     // ── Internal ──
 }
 
@@ -247,7 +246,10 @@ impl Config {
             for v in &volumes {
                 tracing::info!(
                     "  volume '{}': match={}, s3_prefix={}, ttl={}",
-                    v.name, v.match_glob, v.s3_prefix, v.ttl
+                    v.name,
+                    v.match_glob,
+                    v.s3_prefix,
+                    v.ttl
                 );
             }
             (raw::v2_to_raw(&v2_cfg, config_path), volumes)
