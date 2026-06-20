@@ -124,12 +124,16 @@ jobs:
 
       - name: Setup hoard
         run: |
-          # download-artifact preserves dir structure → files are in dist/
-          ls -la dist/
-          chmod +x dist/hoard
+          ls -la
+          HOARD=$(find . -name hoard -type f -not -path "./.git/*" | head -1)
+          if [ -z "$HOARD" ]; then echo "::error::hoard binary not found"; ls -laR; exit 1; fi
+          echo "Found hoard: $HOARD"
+          ln -sf "$(realpath "$HOARD")" /usr/local/bin/hoard
+          chmod +x /usr/local/bin/hoard
           mkdir -p /usr/lib/hoard /var/lib/hoard/volumes
-          cp dist/hoard.bpf.o /usr/lib/hoard/hoard.bpf.o
-          dist/hoard --version || true
+          BPF=$(find . -name hoard.bpf.o -type f | head -1)
+          cp "$BPF" /usr/lib/hoard/hoard.bpf.o
+          hoard --version || true
           cat > /tmp/e2e.toml << 'TOML'
           [daemon]
           mode = "standalone"
@@ -157,7 +161,7 @@ jobs:
 
       - name: Run hoard
         run: |
-          dist/hoard --config /tmp/e2e.toml > /tmp/hoard-e2e.log 2>&1 &
+          hoard --config /tmp/e2e.toml > /tmp/hoard-e2e.log 2>&1 &
           sleep 4
           if ! pgrep hoard > /dev/null; then
             echo "::error::Hoard failed to start"
