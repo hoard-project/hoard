@@ -1,4 +1,4 @@
-# Prometheus Alertmanager rules for Hoard
+# Metrics alerting rules for Hoard
 #
 # Load with:
 #   prometheus --alertmanager.rules-file=contrib/prometheus/alerts.yml

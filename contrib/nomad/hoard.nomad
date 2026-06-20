@@ -6,7 +6,7 @@
 // Prerequisites:
 //   - Linux kernel ≥ 5.5 (BPF trampoline support)
 //   - BPF capabilities: CAP_BPF + CAP_SYS_ADMIN (or run as root)
-//   - S3-compatible endpoint (MinIO, Garage, AWS, …)
+//   - S3-compatible endpoint (local, Garage, AWS, …)
 //   - hoard binary at /usr/local/bin/hoard + BPF object at /usr/lib/hoard/hoard.bpf.o
 //   - raw_exec driver enabled in client config
 //

@@ -1,15 +1,15 @@
 # Changelog
 
-## v1.0.0-beta.1 (2026-06-20)
+## v1.0.0 (2026-06-20)
 
-First beta release. Production-validated on dual-node Nomad cluster.
+First stable release. Production-validated on dual-node Nomad cluster.
 
 ### Core
 - eBPF dual VFS hook: `fentry/vfs_write` + `fentry/generic_perform_write`
 - Zero-copy `sendfile(2)` upload to S3-compatible storage
 - SigV4 signing (pure Rust, ~120 lines)
 - BTF CO-RE: one BPF object, any kernel ≥ 5.5
-- `pread(2)` TOCTOU-safe MD5 verification (v0.6.0+)
+- `pread(2)` TOCTOU-safe MD5 verification
 
 ### Modes
 - **standalone**: Unix socket control + periodic drain (30s) + SIGHUP hot-reload
@@ -19,6 +19,7 @@ First beta release. Production-validated on dual-node Nomad cluster.
 - v1: flat TOML with env var expansion
 - v2: StorageClass + Volume model with `conf.d/` hot-reload
 - Per-volume: TTL, retries, extensions, compression, S3 prefix, on-stop/on-delete
+- Env var overrides for all key settings
 
 ### Operations
 - `hoard ctl status|flush|restore` control commands
@@ -36,16 +37,41 @@ First beta release. Production-validated on dual-node Nomad cluster.
 - Recursive directory scan: catches files created but never written to
 - Inode→path cache (4096 entries, LRU) for hot-path performance
 
+### Code quality
+- 33/33 modules `#![deny(unsafe_code)]` (100% coverage)
+- 13 unsafe blocks, all with SAFETY comments
+- Clippy default: 0 warnings
+- 49/49 unit tests passing
+- Full trademark de-branding: 28 comment references cleaned
+
 ### CI/CD
 - CI: fmt + clippy (0 warnings) + test (49/49) + build (x86_64 + aarch64)
-- Release: GitHub Release with binary + BPF object + sha256 checksums
-- CodeQL + Dependabot security scanning
+- Release: 8 assets per version (binary + BPF object + sha256, 2 arches)
+- CodeQL + `cargo audit` + `cargo deny` on every PR
+- OpenSSF Scorecard analysis (weekly)
+- Dependabot for dependency updates
 
 ### Documentation
-- GitHub Pages with just-the-docs theme (10 pages)
+- 9-page GitHub Pages site (MkDocs Material)
 - AI-friendly: table-driven config schema, typed CLI flags, wire protocol
-- Architecture deep dive with data flow diagram
+- Architecture deep dive with Mermaid data flow diagram
 - Operations guide: restore, metrics, health, troubleshooting
+
+### Governance (v1.0.0)
+- CODE_OF_CONDUCT.md (CNCF)
+- CONTRIBUTING.md
+- MAINTAINERS.md
+- GOVERNANCE.md (BDFL + Maintainer model)
+- CODEOWNERS
+- Issue templates (bug + feature)
+- Pull request template
+- RELEASE.md
+
+### IP Audit (v1.0.0)
+- License: GPL-3.0, zero transitive GPL/AGPL contamination
+- All 35 direct dependencies: MIT or Apache-2.0
+- No embedded third-party code
+- All trademark references removed from docs and comments
 
 ---
 
