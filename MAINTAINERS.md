@@ -2,7 +2,7 @@
 
 | Name | GitHub | Role | Timezone |
 |------|--------|------|----------|
-| Ethan | [@k3s-forge](https://github.com/k3s-forge) | Lead | UTC+8 |
+| Ethan | [@hoard-project](https://github.com/hoard-project) | Lead | UTC+8 |
 
 ## Emeritus
 
