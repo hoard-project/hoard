@@ -39,11 +39,12 @@ job "hoard" {
 
   group "hoard" {
     task "hoard" {
-      driver = "exec"
+      driver = "raw_exec"  # exec runs as nobody → no BPF privileges
 
       config {
         command = "local/hoard"
         args    = ["--config", "local/hoard.toml"]
+        user    = "root"  # required by BPF
       }
 
       artifact {
@@ -66,18 +67,31 @@ job "hoard" {
 
       template {
         data = <<EOF
-HOARD_MODE=nomad
-HOARD_WATCH_PATH={{ env "NOMAD_ALLOC_DIR" }}/volumes
-HOARD_S3_ENDPOINT=http://s3.service.consul:9000
-HOARD_S3_BUCKET=hoard-backups
-HOARD_S3_ACCESS_KEY={{ with secret "kv/data/s3" }}{{ .Data.data.access_key }}{{ end }}
-HOARD_S3_SECRET_KEY={{ with secret "kv/data/s3" }}{{ .Data.data.secret_key }}{{ end }}
-HOARD_METRICS_ADDR=0.0.0.0:9150
-HOARD_WATCH_PATTERNS=*
-HOARD_S3_NO_SIGN=true
+[hoard]
+version = 2
+[daemon]
+mode = "nomad"
+service = "hoard"
+metrics_addr = "0.0.0.0:9150"
+[watch]
+paths = ["{{ env "NOMAD_ALLOC_DIR" }}/volumes"]
+[s3]
+endpoint = "http://s3.service.consul:9000"
+region = "us-east-1"
+bucket = "hoard-backups"
+access_key = "{{ with secret "kv/data/s3" }}{{ .Data.data.access_key }}{{ end }}"
+secret_key = "{{ with secret "kv/data/s3" }}{{ .Data.data.secret_key }}{{ end }}"
+no_sign = true
+[defaults]
+prefix = "hoard"
+ttl = "30d"
+retries = 3
+extensions = ["*"]
+compression = "zstd"
+on_stop = "drain"
+on_delete = "keep"
 EOF
-        destination = "secrets/.env"
-        env         = true
+        destination = "local/hoard.toml"
       }
 
       resources {
@@ -144,7 +158,20 @@ nomad alloc status $(nomad job allocs -t '{{ range . }}{{ if eq .ClientStatus "r
 | Lifecycle | systemd | Nomad scheduler |
 | Upgrade | Binary replace + restart | `nomad job run` + rolling update |
 
-## Health check
+## BPF privileges
+
+Hoard requires `CAP_BPF` + `CAP_SYS_ADMIN` to load eBPF programs. The
+`exec` driver runs tasks as `nobody` and **cannot** support BPF. Use
+`raw_exec` instead — it runs directly on the host as the Nomad agent user
+(typically `root`).
+
+```hcl
+driver = "raw_exec"
+```
+
+If you must use `exec` for security isolation, hoard falls back to inotify
+polling — slower but functional. Set `HOARD_BPF_DISABLE=true` to skip BPF
+loading entirely.
 
 ```bash
 # Nomad health
