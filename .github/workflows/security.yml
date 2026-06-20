@@ -9,15 +9,15 @@ on:
     - cron: "0 6 * * 1"  # weekly on Monday 06:00 UTC
   workflow_dispatch:
 
-permissions:
-  contents: read
-  security-events: write
+permissions: read-all
 
 jobs:
   # ── CodeQL: static analysis for Rust + C ──────────────────
   codeql:
     name: "CodeQL"
     runs-on: ubuntu-22.04
+    permissions:
+      security-events: write
     strategy:
       fail-fast: false
     steps:

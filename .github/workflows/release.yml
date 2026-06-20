@@ -4,13 +4,15 @@ on:
   push:
     tags: ["v*"]
 
-permissions:
-  contents: write
+permissions: read-all
 
 jobs:
   release:
     name: "release (${{ matrix.target }})"
     runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: write
+      id-token: write
     strategy:
       fail-fast: false
       matrix:
@@ -52,6 +54,13 @@ jobs:
 
           # --- Summary ---
           ls -lh target/release/${{ matrix.artifact_name }}*
+
+      - name: Generate SLSA provenance
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: |
+            target/release/${{ matrix.artifact_name }}
+            target/release/${{ matrix.artifact_name }}.bpf.o
 
       - name: Upload to release
         uses: softprops/action-gh-release@v2

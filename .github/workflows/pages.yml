@@ -8,10 +8,7 @@ on:
       - '.github/workflows/pages.yml'
   workflow_dispatch:
 
-permissions:
-  contents: read
-  pages: write
-  id-token: write
+permissions: read-all
 
 concurrency:
   group: pages
@@ -20,6 +17,8 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-22.04
+    permissions:
+      pages: write
     steps:
       - uses: actions/checkout@v6
 
@@ -41,6 +40,9 @@ jobs:
   deploy:
     needs: build
     runs-on: ubuntu-22.04
+    permissions:
+      pages: write
+      id-token: write
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
