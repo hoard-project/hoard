@@ -1,19 +1,13 @@
-#![allow(dead_code)]
-//! Configuration loading: v1 compat, v2 StorageClass/Volume, CLI override.
+//! Configuration loading: v2 StorageClass/Volume model + CLI override.
 //!
 //! ## Load order
 //!
-//! 1. TOML file (v1 or v2, detected by `[hoard].version`)
-//! 2. conf.d/ directories (v2 only)
+//! 1. v2 TOML file (detected by `[hoard].version = 2`)
+//! 2. conf.d/ directories
 //! 3. CLI flags / env vars (highest priority)
-//!
-//! ## v1 → v2 auto-upgrade
-//!
-//! v1 configs are translated to a single default volume so existing
-//! deployments keep working without changes.
 #![deny(unsafe_code)]
 
-mod compat;
+mod raw;
 pub mod env;
 pub mod registry;
 pub mod v2;
@@ -23,12 +17,11 @@ use clap::Parser;
 use std::path::PathBuf;
 use url::Url;
 
-pub use compat::ConfigFile;
 pub use v2::ResolvedVolume;
 
 // ── CLI layer ────────────────────────────────────────────────────
 
-/// Hoard: eBPF + io_uring zero-copy SQLite backup to S3.
+/// Hoard: eBPF + io_uring zero-copy file backup to S3.
 #[derive(Parser, Debug, Clone)]
 #[command(name = "hoard", version, about)]
 pub struct Config {
@@ -147,32 +140,31 @@ pub struct Config {
     pub metrics_addr: Option<String>,
 
     // ── Internal ──
-    /// Saved config path for SIGHUP reload
-    #[arg(skip)]
-    pub config_path: Option<PathBuf>,
 }
 
 /// Deployment mode.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
 pub enum Mode {
+    /// Standalone: single-machine deployment
     Standalone,
+    /// Nomad: cluster deployment with meta auto-discovery
     Nomad,
 }
 
 /// TLS mode from CLI argument.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
 pub enum TlsModeArg {
+    /// Kernel TLS (requires 5.5+)
     Ktls,
+    /// Plain TCP (no encryption)
     Plain,
+    /// Userspace TLS (rustls)
     Userspace,
 }
 
 // ── Validated config ─────────────────────────────────────────────
 
-/// Fully validated, canonicalized runtime configuration.
-///
-/// This is what `hoard.rs` consumes.  It supports both v1 (legacy flat)
-/// and v2 (StorageClass/Volume model) configs.
+/// Fully validated configuration, ready for daemon startup.
 #[derive(Debug, Clone)]
 pub struct ValidatedConfig {
     pub mode: Mode,
@@ -180,19 +172,13 @@ pub struct ValidatedConfig {
     pub watch_path: PathBuf,
     pub watch_patterns: Vec<String>,
     pub watch_excludes: Vec<String>,
-    #[allow(dead_code)]
-    pub tls_mode: TlsModeArg,
     pub s3_endpoint: Url,
     pub s3_region: String,
     pub s3_bucket: String,
     pub s3_access_key: String,
     pub s3_secret_key: String,
-    #[allow(dead_code)]
-    pub s3_prefix: String,
     pub s3_no_sign: bool,
     pub gc_interval_secs: u64,
-    #[allow(dead_code)]
-    pub gc_ttl_days: u32,
     pub nomad_addr: Option<String>,
     pub nomad_token: Option<String>,
     pub control_socket: PathBuf,
@@ -200,11 +186,8 @@ pub struct ValidatedConfig {
     pub pending_db: PathBuf,
     pub max_upload_retries: u32,
     pub dead_letter_dir: PathBuf,
-    #[allow(dead_code)]
     pub config_path: Option<PathBuf>,
-
-    // ── v2 additions ──
-    /// Resolved volumes (v2 only; v1 generates a single default volume).
+    /// Resolved volumes (from v2 TOML + conf.d).
     pub volumes: Vec<ResolvedVolume>,
     /// Nomad meta auto-discovery enabled.
     pub nomad_meta_enabled: bool,
@@ -212,42 +195,32 @@ pub struct ValidatedConfig {
     pub nomad_meta_poll_secs: u64,
 }
 
-/// Convert LegacyConfig + resolved volumes into ValidatedConfig.
-fn legacy_to_validated(lc: compat::LegacyConfig, volumes: Vec<ResolvedVolume>) -> ValidatedConfig {
+/// Convert RawConfig + resolved volumes into ValidatedConfig.
+fn raw_to_validated(raw: raw::RawConfig, volumes: Vec<ResolvedVolume>) -> ValidatedConfig {
     ValidatedConfig {
-        mode: match lc.mode {
-            compat::Mode::Standalone => Mode::Standalone,
-            compat::Mode::Nomad => Mode::Nomad,
-        },
-        service: lc.service,
-        watch_path: lc.watch_path,
-        watch_patterns: lc.watch_patterns,
-        watch_excludes: lc.watch_excludes,
-        tls_mode: match lc.tls_mode {
-            compat::TlsMode::Ktls => TlsModeArg::Ktls,
-            compat::TlsMode::Plain => TlsModeArg::Plain,
-            compat::TlsMode::Userspace => TlsModeArg::Userspace,
-        },
-        s3_endpoint: lc.s3_endpoint,
-        s3_region: lc.s3_region,
-        s3_bucket: lc.s3_bucket,
-        s3_access_key: lc.s3_access_key,
-        s3_secret_key: lc.s3_secret_key,
-        s3_prefix: lc.s3_prefix,
-        s3_no_sign: lc.s3_no_sign,
-        gc_interval_secs: lc.gc_interval_secs,
-        gc_ttl_days: lc.gc_ttl_days,
-        nomad_addr: lc.nomad_addr,
-        nomad_token: lc.nomad_token,
-        control_socket: lc.control_socket,
-        metrics_addr: lc.metrics_addr,
-        pending_db: lc.pending_db,
-        max_upload_retries: lc.max_upload_retries,
-        dead_letter_dir: lc.dead_letter_dir,
-        config_path: lc.config_path,
+        mode: raw.mode,
+        service: raw.service,
+        watch_path: raw.watch_path,
+        watch_patterns: raw.watch_patterns,
+        watch_excludes: raw.watch_excludes,
+        s3_endpoint: raw.s3_endpoint,
+        s3_region: raw.s3_region,
+        s3_bucket: raw.s3_bucket,
+        s3_access_key: raw.s3_access_key,
+        s3_secret_key: raw.s3_secret_key,
+        s3_no_sign: raw.s3_no_sign,
+        gc_interval_secs: raw.gc_interval_secs,
+        nomad_addr: raw.nomad_addr,
+        nomad_token: raw.nomad_token,
+        control_socket: raw.control_socket,
+        metrics_addr: raw.metrics_addr,
+        pending_db: raw.pending_db,
+        max_upload_retries: raw.max_upload_retries,
+        dead_letter_dir: raw.dead_letter_dir,
+        config_path: raw.config_path,
         volumes,
-        nomad_meta_enabled: lc.nomad_meta_enabled,
-        nomad_meta_poll_secs: lc.nomad_meta_poll_secs,
+        nomad_meta_enabled: raw.nomad_meta_enabled,
+        nomad_meta_poll_secs: raw.nomad_meta_poll_secs,
     }
 }
 
@@ -256,155 +229,122 @@ fn legacy_to_validated(lc: compat::LegacyConfig, volumes: Vec<ResolvedVolume>) -
 impl Config {
     /// Load and validate the full configuration.
     pub fn load(self) -> Result<ValidatedConfig> {
-        // ── Step 1: Load TOML (v1 or v2) ──
-        let (legacy, volumes) = if let Some(ref config_path) = self.config {
+        let (raw_cfg, volumes) = if let Some(ref config_path) = self.config {
             let raw = std::fs::read_to_string(config_path)
                 .with_context(|| format!("reading config: {}", config_path.display()))?;
 
-            // Detect version
-            let is_v2 = toml::from_str::<toml::Table>(&raw)
-                .ok()
-                .and_then(|t| {
-                    t.get("hoard")
-                        .and_then(toml::Value::as_table)
-                        .and_then(|h| h.get("version"))
-                        .and_then(toml::Value::as_integer)
-                })
-                .map(|v| v == 2)
-                .unwrap_or(false);
+            let v2_cfg: v2::ConfigV2 = toml::from_str(&raw)
+                .with_context(|| format!("parsing v2 config: {}", config_path.display()))?;
 
-            tracing::info!(is_v2, config_path = %config_path.display(), "config version detection");
+            tracing::info!(config_path = %config_path.display(), "loaded v2 config");
 
-            match is_v2 {
-                true => {
-                    let v2 = v2::load(config_path)?;
-                    let volumes = v2::resolve_volumes(&v2)?;
-                    tracing::info!(
-                        "loaded v2 config from {}: {} storage_classes, {} volumes",
-                        config_path.display(),
-                        v2.storage_classes.len(),
-                        volumes.len()
-                    );
-                    for v in &volumes {
-                        tracing::info!(
-                            "  volume '{}': match={}, s3_prefix={}, ttl={}",
-                            v.name,
-                            v.match_glob,
-                            v.s3_prefix,
-                            v.ttl
-                        );
-                    }
-                    (compat::v2_to_legacy(&v2, config_path), volumes)
-                }
-                false => {
-                    // v1 or unknown → treat as v1
-                    tracing::info!("loading v1 config from {}", config_path.display());
-                    compat::load_v1_with_default_volume(config_path)?
-                }
+            let volumes = v2::resolve_volumes(&v2_cfg)?;
+            tracing::info!(
+                "{} storage_classes, {} volumes",
+                v2_cfg.storage_classes.len(),
+                volumes.len()
+            );
+            for v in &volumes {
+                tracing::info!(
+                    "  volume '{}': match={}, s3_prefix={}, ttl={}",
+                    v.name, v.match_glob, v.s3_prefix, v.ttl
+                );
             }
+            (raw::v2_to_raw(&v2_cfg, config_path), volumes)
         } else {
-            // No config file — use defaults
-            (compat::default_legacy(), compat::default_single_volume())
+            (raw::default_raw(), raw::default_single_volume())
         };
 
-        // ── Step 2: Apply CLI overrides ──
-        let mut legacy = legacy;
-        self.apply_overrides(&mut legacy);
+        // Apply CLI overrides on top of config file defaults
+        let mut raw_cfg = raw_cfg;
+        self.apply_overrides(&mut raw_cfg);
 
-        // ── Step 3: Validate ──
-        if legacy.s3_endpoint.as_str().is_empty() {
+        // Validate
+        if raw_cfg.s3_endpoint.as_str().is_empty() {
             anyhow::bail!("S3 endpoint is required");
         }
-        if legacy.s3_bucket.is_empty() {
+        if raw_cfg.s3_bucket.is_empty() {
             anyhow::bail!("S3 bucket is required");
         }
 
-        Ok(legacy_to_validated(legacy, volumes))
+        Ok(raw_to_validated(raw_cfg, volumes))
     }
 
-    fn apply_overrides(&self, vc: &mut compat::LegacyConfig) {
+    fn apply_overrides(&self, raw: &mut raw::RawConfig) {
         if let Some(ref m) = self.mode {
-            vc.mode = match m {
-                Mode::Standalone => compat::Mode::Standalone,
-                Mode::Nomad => compat::Mode::Nomad,
-            };
+            raw.mode = *m;
         }
         if let Some(ref s) = self.service {
-            vc.service = s.clone();
+            raw.service = s.clone();
         }
         if let Some(ref p) = self.watch_path {
-            vc.watch_path = p.clone();
+            raw.watch_path = p.clone();
         }
-        if let Some(ref p) = self.watch_patterns {
-            vc.watch_patterns = p.split(',').map(|s| s.trim().to_string()).collect();
+        if let Some(ref roots) = self.watch_root {
+            raw.watch_path = roots.clone();
         }
-        if let Some(ref e) = self.watch_excludes {
-            vc.watch_excludes = e.split(',').map(|s| s.trim().to_string()).collect();
+        if let Some(ref pats) = self.watch_patterns {
+            raw.watch_patterns = pats.split(',').map(|s| s.trim().to_string()).collect();
+        }
+        if let Some(ref ex) = self.watch_excludes {
+            raw.watch_excludes = ex.split(',').map(|s| s.trim().to_string()).collect();
         }
         if let Some(ref e) = self.s3_endpoint {
-            vc.s3_endpoint = e.clone();
+            raw.s3_endpoint = e.clone();
         }
         if let Some(ref r) = self.s3_region {
-            vc.s3_region = r.clone();
+            raw.s3_region = r.clone();
         }
         if let Some(ref b) = self.s3_bucket {
-            vc.s3_bucket = b.clone();
+            raw.s3_bucket = b.clone();
         }
         if let Some(ref k) = self.s3_access_key {
-            vc.s3_access_key = k.clone();
+            raw.s3_access_key = k.clone();
         }
         if let Some(ref s) = self.s3_secret_key {
-            vc.s3_secret_key = s.clone();
+            raw.s3_secret_key = s.clone();
         }
         if let Some(ref p) = self.s3_prefix {
-            vc.s3_prefix = p.clone();
+            raw.s3_prefix = p.clone();
         }
         if let Some(n) = self.s3_no_sign {
-            vc.s3_no_sign = n;
+            raw.s3_no_sign = n;
         }
         if let Some(i) = self.gc_interval {
-            vc.gc_interval_secs = i;
+            raw.gc_interval_secs = i;
         }
         if let Some(t) = self.gc_ttl_days {
-            vc.gc_ttl_days = t;
+            raw.gc_ttl_days = t;
         }
         if let Some(ref a) = self.nomad_addr {
-            vc.nomad_addr = Some(a.clone());
+            raw.nomad_addr = Some(a.clone());
         }
         if let Some(ref t) = self.nomad_token {
-            vc.nomad_token = Some(t.clone());
+            raw.nomad_token = Some(t.clone());
         }
         if let Some(e) = self.nomad_meta_enabled {
-            vc.nomad_meta_enabled = e;
+            raw.nomad_meta_enabled = e;
         }
         if let Some(p) = self.nomad_meta_poll_secs {
-            vc.nomad_meta_poll_secs = p;
+            raw.nomad_meta_poll_secs = p;
         }
         if let Some(ref s) = self.control_socket {
-            vc.control_socket = s.clone();
+            raw.control_socket = s.clone();
         }
         if let Some(ref a) = self.metrics_addr {
-            vc.metrics_addr = a.clone();
+            raw.metrics_addr = a.clone();
         }
         if let Some(ref p) = self.pending_db {
-            vc.pending_db = PathBuf::from(p);
+            raw.pending_db = PathBuf::from(p);
         }
         if let Some(r) = self.max_upload_retries {
-            vc.max_upload_retries = r;
+            raw.max_upload_retries = r;
         }
         if let Some(ref d) = self.dead_letter_dir {
-            vc.dead_letter_dir = PathBuf::from(d);
+            raw.dead_letter_dir = PathBuf::from(d);
         }
         if let Some(ref t) = self.tls_mode {
-            vc.tls_mode = match t {
-                TlsModeArg::Ktls => compat::TlsMode::Ktls,
-                TlsModeArg::Plain => compat::TlsMode::Plain,
-                TlsModeArg::Userspace => compat::TlsMode::Userspace,
-            };
-        }
-        // watch_root overrides watch_path
-        if let Some(ref root) = self.watch_root {
-            vc.watch_path = root.clone();
+            raw.tls_mode = *t;
         }
     }
 }
@@ -416,10 +356,45 @@ mod tests {
     use super::*;
 
     #[test]
-    fn v1_backward_compat() {
-        // Simulate old config path
-        let vc = compat::default_legacy();
-        assert_eq!(vc.mode, compat::Mode::Standalone);
-        assert!(!vc.s3_bucket.is_empty());
+    fn raw_defaults_are_standalone() {
+        let raw = raw::default_raw();
+        assert_eq!(raw.mode, Mode::Standalone);
+    }
+
+    #[test]
+    fn raw_defaults_single_volume() {
+        let volumes = raw::default_single_volume();
+        assert_eq!(volumes.len(), 1);
+        assert_eq!(volumes[0].name, "default");
+    }
+
+    #[test]
+    fn config_default_has_default_service() {
+        let vc = ValidatedConfig {
+            mode: Mode::Standalone,
+            service: "default".into(),
+            watch_path: PathBuf::from("/"),
+            watch_patterns: vec![],
+            watch_excludes: vec![],
+            s3_endpoint: Url::parse("http://localhost:9000").unwrap(),
+            s3_region: "us-east-1".into(),
+            s3_bucket: "test".into(),
+            s3_access_key: String::new(),
+            s3_secret_key: String::new(),
+            s3_no_sign: false,
+            gc_interval_secs: 3600,
+            nomad_addr: None,
+            nomad_token: None,
+            control_socket: PathBuf::from("/run/hoard.sock"),
+            metrics_addr: "0.0.0.0:9090".into(),
+            pending_db: PathBuf::from("/tmp/pending.db"),
+            max_upload_retries: 5,
+            dead_letter_dir: PathBuf::from("/tmp/dead"),
+            config_path: None,
+            volumes: vec![],
+            nomad_meta_enabled: false,
+            nomad_meta_poll_secs: 300,
+        };
+        assert_eq!(vc.service, "default");
     }
 }

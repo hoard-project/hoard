@@ -697,50 +697,42 @@ async fn reload_config(
         .as_ref()
         .ok_or_else(|| anyhow::anyhow!("no config path — SIGHUP reload requires --config"))?;
 
-    // Re-read the TOML file
-    let file = crate::config::ConfigFile::load(cfg_path)?;
+    // Read and parse v2 config once
+    let raw = std::fs::read_to_string(cfg_path).context("reading v2 config for SIGHUP")?;
+    let expanded = crate::config::env::expand_env(&raw);
+    let mut v2_config: crate::config::v2::ConfigV2 =
+        toml::from_str(&expanded).context("parsing v2 config on SIGHUP")?;
 
-    // ── Reload file filter ──
-    let has_filter = file.filter.extensions.is_some() || file.filter.exclude.is_some();
+    // ── Reload file filter from v2 defaults ──
+    let has_filter = v2_config.defaults.extensions.is_some()
+        || v2_config.defaults.exclude.is_some();
     if has_filter {
-        let patterns: Vec<String> = file
-            .filter
+        let patterns: Vec<String> = v2_config
+            .defaults
             .extensions
+            .clone()
             .map(|exts| exts.iter().map(|e| format!("*.{e}")).collect())
             .unwrap_or_else(|| vec!["*".into()]);
-        let excludes: Vec<String> = file.filter.exclude.unwrap_or_default();
+        let excludes: Vec<String> = v2_config.defaults.exclude.clone().unwrap_or_default();
         let new_filter = FileFilter::new(config.watch_path.clone(), &patterns, &excludes)
             .context("failed to rebuild filter from reloaded config")?;
         let _old = std::mem::replace(&mut *filter.lock().await, new_filter);
         tracing::info!("filter reloaded from config");
     }
 
-    // ── Reload volume registry (v2: re-read conf.d) ──
-    let v2_path = config
-        .config_path
-        .as_ref()
-        .ok_or_else(|| anyhow::anyhow!("no config path"))?;
-    let expanded = crate::config::env::expand_env(
-        &std::fs::read_to_string(v2_path).context("reading v2 config for SIGHUP")?,
-    );
-    let mut v2_config: crate::config::v2::ConfigV2 =
-        toml::from_str(&expanded).context("parsing v2 config on SIGHUP")?;
-
-    // Also load conf.d directories if specified
+    // ── Load conf.d directories ──
     let conf_dirs: Vec<_> = v2_config.hoard.conf_dirs.clone();
     for dir in &conf_dirs {
-        let resolved_dir = expand_path(dir, v2_path);
+        let resolved_dir = expand_path(dir, cfg_path);
         if resolved_dir.is_dir() {
             crate::config::v2::load_conf_dir(&resolved_dir, &mut v2_config)
                 .context("reloading conf.d")?;
         }
     }
 
-    // Resolve fresh volumes
+    // ── Reload volume registry ──
     let new_vols =
         crate::config::v2::resolve_volumes(&v2_config).context("resolving volumes on SIGHUP")?;
-
-    // Atomic reload — RwLock write, read-latches replaced in < 1µs
     registry.reload(new_vols);
     tracing::info!(count = registry.len(), "volume registry reloaded");
 

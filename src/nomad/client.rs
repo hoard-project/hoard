@@ -15,6 +15,7 @@ use std::time::Duration;
 
 /// Job stub from `GET /v1/jobs`
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 pub struct JobStub {
     #[serde(rename = "ID")]
     pub id: String,
@@ -28,6 +29,7 @@ pub struct JobStub {
 
 /// Full job from `GET /v1/job/{id}`
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 pub struct Job {
     #[serde(rename = "ID")]
     pub id: String,
@@ -43,6 +45,7 @@ pub struct Job {
 }
 
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 pub struct TaskGroup {
     #[serde(rename = "Tasks")]
     #[serde(default)]
@@ -50,6 +53,7 @@ pub struct TaskGroup {
 }
 
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 pub struct Task {
     #[serde(rename = "Name")]
     pub name: String,
