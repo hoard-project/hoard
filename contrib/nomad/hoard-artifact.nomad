@@ -6,7 +6,6 @@
 // Prerequisites:
 //   - Linux kernel ≥ 5.5
 //   - Nomad cluster with internet egress (github.com)
-//   - xz utility on host (for decompression)
 //   - raw_exec driver enabled in client config
 //
 // Deploy:
@@ -16,25 +15,24 @@
 //   nomad run -var 's3_access_key=xxx' -var 's3_secret_key=yyy' hoard-artifact.nomad
 //
 // Upgrade version:
-//   Edit HOARD_VERSION below and re-run:
-//   nomad run hoard-artifact.nomad
+//   nomad run -var 'hoard_version=0.6.5' hoard-artifact.nomad
 
 variable "hoard_version" {
   type        = string
-  default     = "0.5.0"
-  description = "Hoard version to deploy (must match a GitHub Release tag without 'v' prefix)"
+  default     = "0.6.5"
+  description = "Hoard version (must match a GitHub Release tag, e.g. 0.6.5)"
 }
 
 variable "s3_access_key" {
   type        = string
   default     = ""
-  description = "S3 access key — override with: nomad run -var 's3_access_key=xxx'"
+  description = "S3 access key"
 }
 
 variable "s3_secret_key" {
   type        = string
   default     = ""
-  description = "S3 secret key — override with: nomad run -var 's3_secret_key=yyy'"
+  description = "S3 secret key"
 }
 
 job "hoard" {
@@ -70,27 +68,27 @@ job "hoard" {
           set -e
           BIN=/usr/local/bin/hoard
           BPF=/usr/lib/hoard/hoard.bpf.o
-          mkdir -p /usr/lib/hoard
+          mkdir -p /usr/lib/hoard /var/lib/hoard/volumes
 
-          xz -d -f local/hoard-bin/hoard-linux-amd64.xz -c > "$BIN.tmp"
-          mv "$BIN.tmp" "$BIN"
+          # Binary
+          cp local/hoard-bin/hoard-x86_64 "$BIN"
           chmod +x "$BIN"
 
-          xz -d -f local/hoard-bin/hoard-bpf-x86.o.xz -c > "$BPF.tmp"
-          mv "$BPF.tmp" "$BPF"
+          # BPF object
+          cp local/hoard-bin/hoard-x86_64.bpf.o "$BPF"
 
-          echo "hoard installed: $($BIN --version 2>/dev/null || echo ok)"
+          echo "hoard installed: $($BIN --version)"
         SCRIPT
         ]
       }
 
       artifact {
-        source      = "https://github.com/hoard-project/hoard/releases/download/v${var.hoard_version}/hoard-linux-amd64.xz"
+        source      = "https://github.com/hoard-project/hoard/releases/download/v${var.hoard_version}/hoard-x86_64"
         destination = "local/hoard-bin/"
       }
 
       artifact {
-        source      = "https://github.com/hoard-project/hoard/releases/download/v${var.hoard_version}/hoard-bpf-x86.o.xz"
+        source      = "https://github.com/hoard-project/hoard/releases/download/v${var.hoard_version}/hoard-x86_64.bpf.o"
         destination = "local/hoard-bin/"
       }
 
@@ -145,7 +143,7 @@ EOF
         S3_BUCKET     = "guardian-backups"
         S3_ACCESS_KEY = var.s3_access_key
         S3_SECRET_KEY = var.s3_secret_key
-        S3_PREFIX      = "hoard"
+        S3_PREFIX     = "hoard"
       }
 
       resources {

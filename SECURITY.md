@@ -4,10 +4,10 @@
 
 | Version | Supported          |
 | ------- | ------------------ |
+| 1.x     | :white_check_mark: |
 | 0.6.x   | :white_check_mark: |
-| 0.5.x   | :white_check_mark: |
-| 0.4.x   | :warning: (EOL)    |
-| 0.1.x   | :x:                |
+| 0.5.x   | :warning: (EOL)    |
+| < 0.5   | :x:                |
 
 ## Reporting a Vulnerability
 
@@ -21,14 +21,15 @@ We aim to acknowledge within 48 hours and provide a fix within 7 days.
 Hoard runs as a **privileged daemon** (BPF + raw socket access). It:
 
 - Loads eBPF programs into the kernel (requires `CAP_BPF` / `CAP_SYS_ADMIN`)
-- Opens raw TCP sockets for kTLS uploads
-- Optionally reads Nomad's Unix socket for lifecycle events
+- Opens TCP sockets for S3 uploads
+- Optionally exposes a Unix domain socket for control commands
 
 ### What We Protect Against
 
-- Credential leaks: all secrets via environment variables, never in config files
-- Supply chain: Dependabot + CodeQL + `cargo audit` on every PR
-- Memory safety: `#![deny(unsafe_code)]` in all modules except `src/ffi.rs`
+- Credential leaks: all secrets via environment variables or Vault, never hardcoded
+- Supply chain: Dependabot + CodeQL on every PR
+- Memory safety: `#![deny(unsafe_code)]` in all modules except `src/ffi.rs` and `src/bin/hoard_atomic.rs`
+- File integrity: `pread(2)` TOCTOU-safe MD5 verification before `sendfile(2)` upload
 
 ### What We Do NOT Protect Against
 
