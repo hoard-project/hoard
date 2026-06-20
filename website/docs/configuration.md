@@ -31,8 +31,8 @@ ttl         = "7d"
 retries     = 3
 extensions  = ["*"]
 exclude     = []
-compression = "zstd"
-encryption  = false
+compression = "zstd"   # (planned — not yet active in upload pipeline)
+encryption  = false    # (planned)
 on_stop     = "drain"
 on_delete   = "keep"
 
@@ -55,7 +55,8 @@ meta_poll_secs = 30
 name = "long-term"
 ttl = "90d"
 retries = 5
-compression = "zstd"
+# zstd compression and encryption are planned features
+#compression = "zstd"
 
 [[storage_classes]]
 name = "short-term"
@@ -87,7 +88,7 @@ s3_prefix = "misc"
 
 | Concept | Analogous to | Purpose |
 |---------|-------------|---------|
-| **StorageClass** | K8s StorageClass | Reusable policy (TTL, retries, compression) |
+| **StorageClass** | K8s StorageClass | Reusable policy (TTL, retries) |
 | **Volume** | K8s PVC | Path glob → StorageClass + S3 prefix |
 | **defaults** | StorageClass fallback | Applied when no volume matches |
 
@@ -145,9 +146,9 @@ More specific globs win. Declaration order breaks ties.
 | `retries` | u32 | `5` | Upload retry count |
 | `extensions` | `[string]` | — | Watch file extensions (e.g. `["db","wal"]`) |
 | `exclude` | `[string]` | — | Patterns to exclude |
-| `compression` | `"zstd"` \| none | none | Apply zstd compression |
-| `encryption` | bool | `false` | Apply encryption |
-| `on_stop` | `"drain"` \| `"skip"` | `"drain"` | Action when volume is removed |
+| `compression` | `"zstd"` \| none | none | *(planned)* zstd compression |
+| `encryption` | bool | `false` | *(planned)* at-rest encryption |
+| `on_stop` | `"drain"` \| `"keep"` \| `"purge"` | `"drain"` | Action when volume is removed |
 | `on_delete` | `"keep"` \| `"purge"` | `"keep"` | Action when watched file is deleted |
 
 ### `[gc]`
@@ -164,8 +165,8 @@ More specific globs win. Declaration order breaks ties.
 | `name` | string | — | **yes** |
 | `ttl` | duration | `"30d"` | no |
 | `retries` | u32 | `5` | no |
-| `compression` | `"zstd"` \| none | none | no |
-| `encryption` | bool | `false` | no |
+| `compression` | `"zstd"` \| none | none | *(planned)* |
+| `encryption` | bool | `false` | *(planned)* |
 
 ### Volume
 
@@ -179,7 +180,7 @@ More specific globs win. Declaration order breaks ties.
 | `exclude` | `[string]` | no |
 | `ttl` | duration | no |
 | `retries` | u32 | no |
-| `on_stop` | `"drain"` \| `"skip"` | no |
+| `on_stop` | `"drain"` \| `"keep"` \| `"purge"` | no |
 | `on_delete` | `"keep"` \| `"purge"` | no |
 
 ### `[resilience]`
@@ -206,4 +207,6 @@ More specific globs win. Declaration order breaks ties.
 3. `/etc/hoard/hoard.toml`
 4. `./hoard.toml` (working directory)
 
-v2 additionally watches `/etc/hoard/conf.d/*.toml` for hot-reload of `[[storage_classes]]` and `[[volumes]]`.
+v2 additionally loads `/etc/hoard/conf.d/*.toml` at startup and on SIGHUP
+(config reload).  These files support `[[storage_classes]]` and `[[volumes]]`
+sections only.
