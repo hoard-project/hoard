@@ -124,11 +124,12 @@ jobs:
 
       - name: Setup hoard
         run: |
-          ls -la
-          chmod +x hoard
+          # download-artifact preserves dir structure → files are in dist/
+          ls -la dist/
+          chmod +x dist/hoard
           mkdir -p /usr/lib/hoard /var/lib/hoard/volumes
-          cp hoard.bpf.o /usr/lib/hoard/hoard.bpf.o
-          ./hoard --version || true
+          cp dist/hoard.bpf.o /usr/lib/hoard/hoard.bpf.o
+          dist/hoard --version || true
           cat > /tmp/e2e.toml << 'TOML'
           [daemon]
           mode = "standalone"
@@ -156,7 +157,7 @@ jobs:
 
       - name: Run hoard
         run: |
-          ./hoard --config /tmp/e2e.toml > /tmp/hoard-e2e.log 2>&1 &
+          dist/hoard --config /tmp/e2e.toml > /tmp/hoard-e2e.log 2>&1 &
           sleep 4
           if ! pgrep hoard > /dev/null; then
             echo "::error::Hoard failed to start"
