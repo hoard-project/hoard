@@ -76,19 +76,21 @@ jobs:
           BPF_OBJ=$(find target/release/build -name hoard.bpf.o -type f | head -1)
           if [ -n "$BPF_OBJ" ] && [ -s "$BPF_OBJ" ]; then
             echo "BPF object: $BPF_OBJ ($(stat -c%s "$BPF_OBJ") bytes)"
-            cp "$BPF_OBJ" hoard.bpf.o
           else
             echo "::error::BPF object not found or empty!"
             exit 1
           fi
+          # Flatten to dist/ for simpler artifact handling
+          mkdir -p dist
+          cp target/release/hoard dist/hoard
+          cp "$BPF_OBJ" dist/hoard.bpf.o
+          ls -lh dist/
 
       - name: Upload binary
         uses: actions/upload-artifact@v7
         with:
           name: hoard-${{ matrix.target }}
-          path: |
-            target/release/hoard
-            hoard.bpf.o
+          path: dist/
 
   # ── E2E smoke test (x86_64, MinIO container) ───────────────
   e2e:
@@ -119,15 +121,14 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: hoard-x86_64-unknown-linux-gnu
-          path: artifacts
 
       - name: Setup hoard
         run: |
-          ls -laR artifacts/
-          chmod +x artifacts/target/release/hoard
+          ls -la
+          chmod +x hoard
           mkdir -p /usr/lib/hoard /var/lib/hoard/volumes
-          cp artifacts/hoard.bpf.o /usr/lib/hoard/hoard.bpf.o
-          artifacts/target/release/hoard --version || true
+          cp hoard.bpf.o /usr/lib/hoard/hoard.bpf.o
+          ./hoard --version || true
           cat > /tmp/e2e.toml << 'TOML'
           [daemon]
           mode = "standalone"
@@ -155,7 +156,7 @@ jobs:
 
       - name: Run hoard
         run: |
-          artifacts/target/release/hoard --config /tmp/e2e.toml > /tmp/hoard-e2e.log 2>&1 &
+          ./hoard --config /tmp/e2e.toml > /tmp/hoard-e2e.log 2>&1 &
           sleep 4
           if ! pgrep hoard > /dev/null; then
             echo "::error::Hoard failed to start"
