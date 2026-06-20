@@ -161,6 +161,7 @@ pub async fn serve_metrics(
 }
 
 /// HTTP handler: GET /metrics → OpenMetrics text format; GET/POST /flush → trigger drain;
+/// POST /nomad-drain → synchronous drain (waits for pending to reach 0);
 /// GET /health → JSON health check.
 async fn metrics_handler(
     req: Request<Incoming>,
@@ -179,6 +180,60 @@ async fn metrics_handler(
                     r#"{"status":"ok","message":"flush triggered"}"#,
                 )))
                 .expect("valid response"))
+        }
+        (&Method::POST, "/nomad-drain") => {
+            if let Some(tx) = flush_tx {
+                // Parse ?timeout= query param (default 30s)
+                let timeout_ms: u64 = req
+                    .uri()
+                    .query()
+                    .and_then(|q| {
+                        q.split('&')
+                            .find(|p| p.starts_with("timeout="))
+                            .and_then(|p| p.split('=').nth(1))
+                            .and_then(|v| v.parse().ok())
+                    })
+                    .unwrap_or(30_000);
+
+                // Wait for eBPF debounce window (500ms)
+                tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+
+                // Trigger flush
+                let _ = tx.send(());
+
+                // Poll pending gauge until 0 or timeout
+                let start = std::time::Instant::now();
+                let deadline = std::time::Duration::from_millis(timeout_ms);
+                let final_pending = loop {
+                    let pending = PENDING_FILES.get();
+                    if pending < 1.0 {
+                        break pending;
+                    }
+                    if start.elapsed() >= deadline {
+                        break pending;
+                    }
+                    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+                };
+
+                let wait_ms = start.elapsed().as_millis() as u64;
+                let body = serde_json::json!({
+                    "status": if final_pending < 1.0 { "ok" } else { "timeout" },
+                    "pending": final_pending as u64,
+                    "wait_ms": wait_ms,
+                });
+                Ok(Response::builder()
+                    .status(StatusCode::OK)
+                    .header("Content-Type", "application/json")
+                    .body(Full::new(Bytes::from(body.to_string())))
+                    .expect("valid response"))
+            } else {
+                Ok(Response::builder()
+                    .status(StatusCode::NOT_FOUND)
+                    .body(Full::new(Bytes::from(
+                        r#"{"status":"error","message":"flush channel not configured"}"#,
+                    )))
+                    .expect("valid response"))
+            }
         }
         (&Method::GET, "/health") => {
             let degraded = HEALTH_STATUS.get() < 1.0;

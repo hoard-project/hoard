@@ -10,6 +10,8 @@
 //!
 //! - `hoard` (default) — run the daemon
 //! - `hoard restore` — bulk restore backups from S3
+//! - `hoard nomad-restore` — prestart data restore (auto-detects Nomad env)
+//! - `hoard ctl flush|status` — control daemon via Unix socket
 //!
 //! ## Unsafe policy
 //!
@@ -60,6 +62,8 @@ struct Cli {
 enum Command {
     /// Restore backups from S3 to local filesystem
     Restore(cli::restore::RestoreArgs),
+    /// Nomad-aware prestart restore (auto-detects prefix/dest from environment)
+    NomadRestore(cli::nomad_restore::NomadRestoreArgs),
     /// Control the hoard daemon via Unix socket
     Ctl {
         #[command(subcommand)]
@@ -105,6 +109,17 @@ async fn main() -> Result<()> {
                 .try_init()
                 .ok();
             cli::restore::run(args).await
+        }
+        Some(Command::NomadRestore(args)) => {
+            // Human-readable logging for nomad restore
+            fmt()
+                .with_env_filter(
+                    EnvFilter::try_from_default_env()
+                        .unwrap_or_else(|_| EnvFilter::new("hoard=info")),
+                )
+                .try_init()
+                .ok();
+            cli::nomad_restore::run(args).await
         }
         Some(Command::Ctl { action }) => {
             // Forward to hoardctl logic

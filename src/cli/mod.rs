@@ -4,6 +4,7 @@
 
 pub mod ctl;
 pub mod daemon;
+pub mod nomad_restore;
 pub mod restore;
 
 use crate::config::{Config, ValidatedConfig};

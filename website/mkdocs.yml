@@ -67,9 +67,10 @@ nav:
   - Quickstart: quickstart.md
   - Guides:
       - Configuration: configuration.md
+      - Nomad Integration: nomad.md
+      - Nomad Lifecycle: nomad-lifecycle.md
       - Operations: operations.md
       - Architecture: architecture.md
-      - Nomad: nomad.md
   - Reference:
       - CLI: reference/cli.md
       - Env Vars: reference/env-vars.md
