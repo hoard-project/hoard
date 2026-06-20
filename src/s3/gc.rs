@@ -1,5 +1,5 @@
 #![allow(dead_code)]
-//! Garbage collection: periodic cleanup of expired S3 backup objects via MinIO client.
+//! Garbage collection: periodic cleanup of expired S3 backup objects via S3 client.
 //!
 //! Uses `mc` CLI (pre-installed) for listing and deletion. Avoids SigV4 signing
 //! bugs and HTTP client quirks by delegating to a battle-tested tool.
@@ -197,7 +197,7 @@ fn parse_mc_json(stdout: &[u8]) -> Result<Vec<McObject>> {
     Ok(objects)
 }
 
-/// Parse MinIO's timestamp format: "2026-06-17T07:34:32.200Z"
+/// Parse S3-compatible timestamp format: "2026-06-17T07:34:32.200Z"
 fn parse_mc_timestamp(s: &str) -> Option<chrono::DateTime<Utc>> {
     // mc uses RFC3339 with milliseconds: "2026-06-17T07:34:32.200Z"
     chrono::DateTime::parse_from_rfc3339(s)
@@ -210,7 +210,7 @@ fn parse_mc_timestamp(s: &str) -> Option<chrono::DateTime<Utc>> {
 use crate::s3::VerifiedS3Backend;
 
 /// Legacy wrapper — delegates to `gc_cycle_mc` using the backend's config.
-/// Uses `guser` alias (pre-configured MinIO user for hoard).
+/// Uses `guser` alias (pre-configured S3 user for hoard).
 pub async fn gc_cycle(s3: &VerifiedS3Backend, prefix: &str, ttl: Duration) -> Result<GcStats> {
     gc_cycle_mc("guser", s3.bucket_name(), prefix, ttl).await
 }

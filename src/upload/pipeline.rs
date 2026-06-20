@@ -283,16 +283,16 @@ impl UploadPipeline<HeaderWritten> {
 impl UploadPipeline<BodyTransmitted> {
     /// Read HTTP response. Consumes SocketFd.
     ///
-    /// We do NOT call shutdown(SHUT_WR) here — MinIO needs time to
+    /// We do NOT call shutdown(SHUT_WR) here — the S3 server needs time to
     /// process the body (write to disk, compute ETag).  When the body
     /// fits exactly within Content-Length and the header carries
-    /// `Connection: close`, MinIO will close the connection after
+    /// `Connection: close`, the S3 server will close the connection after
     /// sending the response.  A 30-second SO_RCVTIMEO prevents
-    /// hanging if MinIO never responds.
+    /// hanging if the server never responds.
     pub fn shutdown_and_read(self, sock: SocketFd) -> Result<UploadOutcome> {
         let raw_fd = sock.into_raw_fd();
 
-        // 30s read timeout — enough for MinIO to flush even large objects
+        // 30s read timeout — enough for S3 server to flush even large objects
         ffi::set_recv_timeout(raw_fd, 30)?;
 
         // Read HTTP response

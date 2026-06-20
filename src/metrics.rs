@@ -1,4 +1,4 @@
-//! Prometheus metrics for Hoard.
+//! Observability metrics for Hoard.
 //!
 //! Exposes metrics on an HTTP endpoint at the configured address.
 //! Also serves a `/flush` endpoint to trigger drain in standalone mode.
@@ -134,7 +134,7 @@ pub fn update_health_gauges(pending_count: u64, dead_letter_count: u64) {
 
 // ── Metrics server ─────────────────────────────────────────────────
 
-/// Start the Prometheus metrics HTTP server on the given address.
+/// Start the metrics HTTP server on the given address.
 ///
 /// If `flush_tx` is provided, a GET/POST `/flush` sends a message to trigger an upload drain.
 pub async fn serve_metrics(
@@ -144,7 +144,7 @@ pub async fn serve_metrics(
     let addr: std::net::SocketAddr = addr.parse()?;
     let listener = TcpListener::bind(&addr).await?;
 
-    tracing::info!(%addr, "Prometheus metrics server starting");
+    tracing::info!(%addr, "Metrics server starting");
 
     loop {
         let (stream, _) = listener.accept().await?;
@@ -160,7 +160,7 @@ pub async fn serve_metrics(
     }
 }
 
-/// HTTP handler: GET /metrics → Prometheus text format; GET/POST /flush → trigger drain;
+/// HTTP handler: GET /metrics → OpenMetrics text format; GET/POST /flush → trigger drain;
 /// GET /health → JSON health check.
 async fn metrics_handler(
     req: Request<Incoming>,

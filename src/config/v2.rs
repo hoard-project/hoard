@@ -1,7 +1,7 @@
 #![allow(dead_code)]
 //! v2 config schema: StorageClass + Volume model.
 //!
-//! Inspired by Kubernetes StorageClass / PVC:
+//! Inspired by the StorageClass / Volume model (PVC-like):
 //!   StorageClass = reusable policy template (TTL, retries, encryption)
 //!   Volume       = tenant binding (path glob → class + S3 prefix)
 #![deny(unsafe_code)]
@@ -533,7 +533,7 @@ mod tests {
 version = 2
 
 [s3]
-endpoint = "http://minio:9000"
+endpoint = "http://s3:9000"
 bucket = "backups"
 "#;
         let v2: ConfigV2 = toml::from_str(toml_str).expect("parse v2 minimal");
@@ -551,7 +551,7 @@ bucket = "backups"
 version = 2
 
 [s3]
-endpoint = "http://minio:9000"
+endpoint = "http://s3:9000"
 bucket = "backups"
 
 [[storage_classes]]
@@ -586,7 +586,7 @@ extensions = ["db", "wal"]
 version = 2
 
 [s3]
-endpoint = "http://minio:9000"
+endpoint = "http://s3:9000"
 bucket = "backups"
 
 [[storage_classes]]
@@ -615,7 +615,7 @@ retries = 3
 version = 2
 
 [s3]
-endpoint = "http://minio:9000"
+endpoint = "http://s3:9000"
 bucket = "backups"
 
 [defaults]

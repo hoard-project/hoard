@@ -89,7 +89,7 @@ pub struct Config {
     #[arg(long, env = "HOARD_S3_SECRET_KEY", hide_env_values = true)]
     pub s3_secret_key: Option<String>,
 
-    /// Skip SigV4 signing (for MinIO / anonymous bucket access)
+    /// Skip SigV4 signing (for local S3 / anonymous bucket access)
     #[arg(long, env = "HOARD_S3_NO_SIGN")]
     pub s3_no_sign: Option<bool>,
 
@@ -134,7 +134,7 @@ pub struct Config {
     pub control_socket: Option<PathBuf>,
 
     // ── Metrics ──
-    /// Prometheus metrics listen address
+    /// Metrics listen address
     #[arg(long, env = "HOARD_METRICS_ADDR")]
     pub metrics_addr: Option<String>,
 

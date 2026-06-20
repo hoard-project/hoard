@@ -64,7 +64,7 @@ impl FileFilter {
     ///   3. Its path relative to watch_root matches zero exclude globs
     ///
     /// Uses `matches_path` for recursive subdirectory matching
-    /// (Litestream-style: `*.db` matches `service-a/prod.db`).
+    /// (`*.db` matches `service-a/prod.db`).
     ///
     /// The path should already be canonicalized by the caller (debounce does this).
     pub fn should_monitor(&self, path: &Path) -> bool {

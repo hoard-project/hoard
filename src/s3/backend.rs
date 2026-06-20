@@ -23,7 +23,7 @@ pub struct S3Backend {
     endpoint: String,
     /// S3 bucket name
     bucket: String,
-    /// Skip SigV4 signing (for anonymous/MinIO)
+    /// Skip SigV4 signing (for local/dev S3)
     no_sign: bool,
 }
 
@@ -50,7 +50,7 @@ impl S3Backend {
     /// Verify credentials by performing a HeadBucket request.
     ///
     /// Returns a `VerifiedS3Backend` that can perform S3 operations.
-    /// Uses `mc` (MinIO client) for credential verification when available,
+    /// Uses `mc` (S3 client) for credential verification when available,
     /// falling back to a direct HTTP HEAD.
     pub async fn verify(self) -> Result<VerifiedS3Backend> {
         let client = reqwest::Client::new();
@@ -68,7 +68,7 @@ impl S3Backend {
                     bucket = %self.bucket,
                     "S3 HeadBucket returned {status} (may need SigV4 signing — proceeding anyway)"
                 );
-                // 403 with MinIO means the bucket requires auth, which is fine
+                // 403 with local S3 means the bucket requires auth, which is fine
                 status.as_u16() == 403
             }
             Err(e) => {

@@ -27,7 +27,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::Mutex;
 
-/// Update Prometheus gauges with current state.
+/// Update metrics gauges with current state.
 async fn update_gauges(pending: &Arc<Mutex<PersistentPending>>, dead_letter_dir: &std::path::Path) {
     let pending_count = pending.lock().await.len() as u64;
     let dead_count = crate::upload::retry::count_dead_letters(dead_letter_dir);
@@ -326,10 +326,10 @@ impl HoardReady {
         let mut sighup = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::hangup())
             .context("failed to register SIGHUP handler")?;
 
-        // ── Start Prometheus metrics server ──
+        // ── Start metrics server ──
         {
             let metrics_addr = config.metrics_addr.clone();
-            tracing::info!(addr = %metrics_addr, "Prometheus metrics endpoint starting");
+            tracing::info!(addr = %metrics_addr, "Metrics endpoint starting");
             let tx = flush_tx.clone();
             tokio::spawn(async move {
                 if let Err(e) = crate::metrics::serve_metrics(&metrics_addr, Some(tx)).await {
@@ -350,7 +350,7 @@ impl HoardReady {
         periodic_drain.tick().await; // skip first immediate tick
 
         // Periodic scan: rediscover files created but never written to
-        // (Litestream-style: pick up new databases in subdirectories).
+        // (recursive: pick up new databases in subdirectories).
         let mut periodic_scan = tokio::time::interval(Duration::from_secs(1800)); // 30 min
         periodic_scan.tick().await; // skip first — initial scan already did it
         let mut trigger_events = self.trigger.into_channel();
@@ -793,7 +793,7 @@ impl HoardReady {
     ///
     /// The TCP connect, sendfile, and HTTP response read are moved into
     /// `spawn_blocking` so they never block the tokio runtime thread.
-    /// This is critical for remote S3/MinIO endpoints where a single hung
+    /// This is critical for remote S3 endpoints where a single hung
     /// connection would otherwise stall all async tasks (including the
     /// metrics endpoint and BPF ringbuf polling).
     async fn upload_file_once(
@@ -939,7 +939,7 @@ impl HoardReady {
 
 /// Scan watch_root recursively, upload matching files, and fill the inode cache.
 ///
-/// Litestream-style: discovers files at any depth under watch_root.
+/// Recursive: discovers files at any depth under watch_root.
 /// Existing files get a baseline upload; the InodeCache is populated
 /// so subsequent BPF events resolve instantly (O(1)).
 async fn run_initial_scan(

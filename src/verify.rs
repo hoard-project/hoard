@@ -1,7 +1,7 @@
 #![allow(dead_code)]
 //! Integrity verification — post-upload MD5 comparison with S3 ETag.
 //!
-//! MinIO (and most S3-compatible servers) set the ``ETag`` header to
+//! S3-compatible servers set the ``ETag`` header to
 //! the MD5 digest of the object body on PUT. We compute the same digest
 //! locally and compare. A mismatch indicates silent corruption — either
 //! in transit (sendfile), in the kernel, or at the S3 layer.
@@ -63,10 +63,10 @@ pub fn pread_md5(path: &Path) -> Result<String, String> {
 
 /// Compare a local file's MD5 with the S3 ETag.
 ///
-/// ETags from MinIO are the hex MD5 digest without quotes.
+/// ETags from S3 servers are the hex MD5 digest without quotes.
 /// Returns `Ok(())` on match, `Err(msg)` on mismatch.
 pub fn verify_etag(path: &Path, etag: &str) -> Result<(), String> {
-    // MinIO sometimes wraps ETags in double quotes. Strip them.
+    // S3 servers sometimes wrap ETags in double quotes. Strip them.
     let etag = etag.trim_matches('"');
     let local = file_md5(path)?;
     if local.eq_ignore_ascii_case(etag) {
