@@ -31,6 +31,12 @@ jobs:
         with:
           components: rustfmt, clippy
 
+      - name: Verify toolchain
+        run: |
+          rustc --version
+          cargo --version
+          rustup show
+
       - name: Check formatting
         run: cargo fmt --check
 
@@ -64,6 +70,11 @@ jobs:
         run: |
           curl --proto '=https' --tlsv1.2 --retry 10 --retry-connrefused -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable --profile minimal
           echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+
+      - name: Verify toolchain
+        run: |
+          rustc --version
+          cargo --version
 
       - name: Build release
         run: cargo build --release
