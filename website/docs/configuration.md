@@ -31,7 +31,7 @@ ttl         = "7d"
 retries     = 3
 extensions  = ["*"]
 exclude     = []
-compression = "zstd"   # (planned — not yet active in upload pipeline)
+compression = "zstd"   # zstd level 3; S3 key gets .zst suffix
 encryption  = false    # (planned)
 on_stop     = "drain"
 on_delete   = "keep"
@@ -55,8 +55,10 @@ meta_poll_secs = 30
 name = "long-term"
 ttl = "90d"
 retries = 5
-# zstd compression and encryption are planned features
-#compression = "zstd"
+# zstd compression (level 3, .zst suffix on S3 key)
+compression = "zstd"
+# encryption is a planned feature
+# encryption = true
 
 [[storage_classes]]
 name = "short-term"
@@ -146,7 +148,7 @@ More specific globs win. Declaration order breaks ties.
 | `retries` | u32 | `5` | Upload retry count |
 | `extensions` | `[string]` | — | Watch file extensions (e.g. `["db","wal"]`) |
 | `exclude` | `[string]` | — | Patterns to exclude |
-| `compression` | `"zstd"` \| none | none | *(planned)* zstd compression |
+| `compression` | `"zstd"` \| none | none | zstd level 3; S3 key gets `.zst` |
 | `encryption` | bool | `false` | *(planned)* at-rest encryption |
 | `on_stop` | `"drain"` \| `"keep"` \| `"purge"` | `"drain"` | Action when volume is removed |
 | `on_delete` | `"keep"` \| `"purge"` | `"keep"` | Action when watched file is deleted |
@@ -165,7 +167,7 @@ More specific globs win. Declaration order breaks ties.
 | `name` | string | — | **yes** |
 | `ttl` | duration | `"30d"` | no |
 | `retries` | u32 | `5` | no |
-| `compression` | `"zstd"` \| none | none | *(planned)* |
+| `compression` | `"zstd"` \| none | none | zstd level 3 |
 | `encryption` | bool | `false` | *(planned)* |
 
 ### Volume

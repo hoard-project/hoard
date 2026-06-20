@@ -205,15 +205,15 @@ pub struct HoardReady {
 
 impl HoardReady {
     /// Resolve upload config for a given file path.
-    /// Returns (s3_prefix, retries, root) where root is the volume's base_dir
+    /// Returns (s3_prefix, retries, root, compression).'s base_dir
     /// or the global watch_root.
     fn resolve_upload_params(
         registry: &VolumeRegistry,
         watch_root: &std::path::Path,
         path: &std::path::Path,
-    ) -> (String, u32, std::path::PathBuf) {
+    ) -> (String, u32, std::path::PathBuf, Option<String>) {
         let (vol, root) = registry.resolve_with_root(path, watch_root);
-        (vol.s3_prefix, vol.retries, root)
+        (vol.s3_prefix, vol.retries, root, vol.compression)
     }
 
     /// Per-volume OnStop policy-aware graceful shutdown.
@@ -233,12 +233,13 @@ impl HoardReady {
         let mut uploaded = 0u64;
         let mut failed = 0u64;
         for path in &to_upload {
-            let (prefix, _, _) = Self::resolve_upload_params(registry, watch_root, path);
+            let (prefix, _, _, comp) = Self::resolve_upload_params(registry, watch_root, path);
             match Self::upload_file(
                 s3,
                 path,
                 watch_root,
                 &prefix,
+                comp.as_deref(),
                 retry_cfg,
                 pending,
                 dead_letter_dir,
@@ -453,9 +454,10 @@ impl HoardReady {
                                 guard.drain()
                             };
                             for path in &to_upload {
-                                let (prefix, _, _) = Self::resolve_upload_params(&registry, &watch_root, path);
+                                let (prefix, _, _, comp) = Self::resolve_upload_params(&registry, &watch_root, path);
                                 if let Err(e) = Self::upload_file(
                                     &s3, path, &watch_root, &prefix,
+                                    comp.as_deref(),
                                     &retry_cfg, &pending, &dead_letter_dir,
                                 ).await {
                                     tracing::error!(path = %path.display(), %e, "upload exhausted retries");
@@ -479,9 +481,10 @@ impl HoardReady {
                         guard.drain()
                     };
                     for path in &to_upload {
-                        let (prefix, _, _) = Self::resolve_upload_params(&registry, &watch_root, path);
+                        let (prefix, _, _, comp) = Self::resolve_upload_params(&registry, &watch_root, path);
                         if let Err(e) = Self::upload_file(
                             &s3, path, &watch_root, &prefix,
+                            comp.as_deref(),
                             &retry_cfg, &pending, &dead_letter_dir,
                         ).await {
                             tracing::error!(path = %path.display(), %e, "upload exhausted retries");
@@ -541,9 +544,10 @@ impl HoardReady {
                         guard.drain()
                     };
                     for path in &to_upload {
-                        let (prefix, _, _) = Self::resolve_upload_params(&registry, &watch_root, path);
+                        let (prefix, _, _, comp) = Self::resolve_upload_params(&registry, &watch_root, path);
                         if let Err(e) = Self::upload_file(
                             &s3, path, &watch_root, &prefix,
+                            comp.as_deref(),
                             &retry_cfg, &pending, &dead_letter_dir,
                         ).await {
                             tracing::error!(path = %path.display(), %e, "upload exhausted retries");
@@ -788,6 +792,7 @@ impl HoardReady {
         path: &std::path::Path,
         watch_root: &std::path::Path,
         prefix: &str,
+        compression: Option<&str>,
         retry_cfg: &RetryConfig,
         pending: &Arc<Mutex<PersistentPending>>,
         dead_letter_dir: &std::path::Path,
@@ -795,7 +800,7 @@ impl HoardReady {
         let mut last_error = String::new();
 
         for attempt in 1..=retry_cfg.max_attempts {
-            let result = Self::upload_file_once(s3, path, watch_root, prefix).await;
+            let result = Self::upload_file_once(s3, path, watch_root, prefix, compression).await;
 
             match result {
                 Ok(()) => {
@@ -838,9 +843,10 @@ impl HoardReady {
         path: &std::path::Path,
         watch_root: &std::path::Path,
         prefix: &str,
+        compression: Option<&str>,
         _retries: u32,
     ) {
-        match Self::upload_file_once(s3, path, watch_root, prefix).await {
+        match Self::upload_file_once(s3, path, watch_root, prefix, compression).await {
             Ok(()) => {}
             Err(e) => {
                 tracing::error!(path = %path.display(), %e, "scan upload failed");
@@ -856,10 +862,11 @@ impl HoardReady {
     /// connection would otherwise stall all async tasks (including the
     /// metrics endpoint and BPF ringbuf polling).
     async fn upload_file_once(
-        _s3: &VerifiedS3Backend,
+        s3: &VerifiedS3Backend,
         path: &std::path::Path,
         watch_root: &std::path::Path,
         prefix: &str,
+        compression: Option<&str>,
     ) -> Result<(), String> {
         crate::metrics::UPLOAD_TOTAL.inc();
         crate::metrics::UPLOAD_IN_FLIGHT.inc();
@@ -886,6 +893,32 @@ impl HoardReady {
                 )
             }
         };
+
+        // ── Compressed upload path (zstd) ──
+        if compression == Some("zstd") {
+            let raw = std::fs::read(path)
+                .map_err(|e| format!("failed to read {}: {e}", path.display()))?;
+            let compressed = zstd::encode_all(&raw[..], 3)
+                .map_err(|e| format!("zstd compress: {e}"))?;
+            let compressed_key = format!("{s3_key}.zst");
+            let compressed_md5 = format!("{:x}", md5::compute(&compressed));
+
+            let etag = s3
+                .put_bytes(&compressed_key, &compressed)
+                .await
+                .map_err(|e| format!("compressed upload: {e}"))?;
+
+            if !compressed_md5.eq_ignore_ascii_case(&etag) {
+                crate::metrics::ETAG_MISMATCH_TOTAL.inc();
+                crate::metrics::UPLOAD_IN_FLIGHT.dec();
+                return Err(format!(
+                    "ETag mismatch: local={compressed_md5} s3={etag}"
+                ));
+            }
+
+            crate::metrics::UPLOAD_IN_FLIGHT.dec();
+            return Ok(());
+        }
 
         // Open and stat the file
         let std_file = std::fs::File::open(path)
@@ -918,7 +951,7 @@ impl HoardReady {
 
         // Stage 2: Presign (async — S3 API call)
         let connected = checkpointed
-            .presign(_s3)
+            .presign(s3)
             .await
             .map_err(|e| format!("S3 presign: {e}"))?
             .connect("localhost", 9000)
@@ -1086,9 +1119,9 @@ async fn run_initial_scan(
             let permit = semaphore.clone();
             join_set.spawn(async move {
                 let _permit = permit.acquire().await;
-                let (prefix, retries, root) =
+                let (prefix, retries, root, comp) =
                     HoardReady::resolve_upload_params(&reg, &watch_root, &path);
-                HoardReady::upload_file_once_scan(&s3, &path, &root, &prefix, retries).await;
+                HoardReady::upload_file_once_scan(&s3, &path, &root, &prefix, comp.as_deref(), retries).await;
             });
         }
 

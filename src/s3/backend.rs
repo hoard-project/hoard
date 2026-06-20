@@ -135,6 +135,42 @@ impl VerifiedS3Backend {
         .await
     }
 
+    /// Upload raw bytes to a pre-signed S3 PUT URL.
+    /// Used for compressed uploads where sendfile(2) isn't applicable.
+    pub async fn put_bytes(&self, key: &str, data: &[u8]) -> Result<String> {
+        let url = self.presign_put(key, Duration::from_secs(3600)).await?;
+
+        let response = self
+            .client
+            .put(&url)
+            .header("Content-Type", "application/octet-stream")
+            .body(data.to_vec())
+            .send()
+            .await
+            .with_context(|| format!("S3 PutObject failed for {key}"))?;
+
+        if !response.status().is_success() {
+            anyhow::bail!(
+                "S3 PutObject returned {} for {key}: {}",
+                response.status(),
+                response.text().await.unwrap_or_default()
+            );
+        }
+
+        // Extract ETag from response headers
+        let etag = response
+            .headers()
+            .get("ETag")
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("")
+            .trim_matches('"')
+            .to_string();
+
+        crate::metrics::UPLOAD_BYTES_TOTAL.inc_by(data.len() as f64);
+        tracing::info!(%key, size = data.len(), %etag, "compressed upload succeeded");
+        Ok(etag)
+    }
+
     /// Download an object from S3.
     pub async fn get_object(&self, key: &str) -> Result<Vec<u8>> {
         let _url = format!(
