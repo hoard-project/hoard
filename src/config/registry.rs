@@ -170,6 +170,9 @@ pub fn parse_ttl(ttl: &str) -> std::time::Duration {
     } else if let Some(hours_str) = ttl.strip_suffix('h') {
         let hours: u64 = hours_str.parse().unwrap_or(24);
         std::time::Duration::from_secs(hours * 3600)
+    } else if let Some(secs_str) = ttl.strip_suffix('s') {
+        let secs: u64 = secs_str.parse().unwrap_or(30 * 86400);
+        std::time::Duration::from_secs(secs)
     } else {
         let secs: u64 = ttl.parse().unwrap_or(30 * 86400);
         std::time::Duration::from_secs(secs)
@@ -353,6 +356,18 @@ mod tests_ttl {
     #[test]
     fn parse_hours() {
         assert_eq!(parse_ttl("24h"), std::time::Duration::from_secs(24 * 3600));
+    }
+
+    #[test]
+    fn parse_seconds_suffix() {
+        assert_eq!(parse_ttl("1s"), std::time::Duration::from_secs(1));
+        assert_eq!(parse_ttl("60s"), std::time::Duration::from_secs(60));
+        assert_eq!(parse_ttl("0s"), std::time::Duration::from_secs(0));
+    }
+
+    #[test]
+    fn parse_bare_seconds() {
+        assert_eq!(parse_ttl("3600"), std::time::Duration::from_secs(3600));
     }
 
     #[test]
