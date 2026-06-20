@@ -4,15 +4,16 @@ on:
   push:
     tags: ["v*"]
 
-permissions:
-  contents: write
-  id-token: write
-  attestations: write
+permissions: {}
 
 jobs:
   release:
     name: "release (${{ matrix.target }})"
     runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
     strategy:
       fail-fast: false
       matrix:
@@ -26,14 +27,14 @@ jobs:
             bpf_arch: arm64
             artifact_name: hoard-aarch64
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@df4cb1cf17f246ab2dd04c67210db2d3e3ff53f7  # v6
 
       - name: Install system dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y libssl-dev libelf-dev clang llvm
 
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@29eef3381d2e327c7e04d0a92d25543c4b8d4bc8  # stable
 
       - name: Build release
         run: cargo build --release
@@ -56,14 +57,14 @@ jobs:
           ls -lh target/release/${{ matrix.artifact_name }}*
 
       - name: Generate SLSA provenance
-        uses: actions/attest-build-provenance@v2
+        uses: actions/attest-build-provenance@96b4a1e53b3ac7f2c692f07ed7eac2b7bdf6c1b5  # v2
         with:
           subject-path: |
             target/release/${{ matrix.artifact_name }}
             target/release/${{ matrix.artifact_name }}.bpf.o
 
       - name: Upload to release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@3bb1273b40e2abc5fb1e6c83d77b47b60903dda2  # v2
         with:
           files: |
             target/release/${{ matrix.artifact_name }}

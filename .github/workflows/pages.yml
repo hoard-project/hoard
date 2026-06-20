@@ -20,9 +20,9 @@ jobs:
     permissions:
       pages: write
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@df4cb1cf17f246ab2dd04c67210db2d3e3ff53f7  # v6
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@a26af69be951a213c5bd60f6403c5cad31e7cdb9  # v5
         with:
           python-version: '3.12'
 
@@ -33,7 +33,7 @@ jobs:
         working-directory: website
         run: mkdocs build
 
-      - uses: actions/upload-pages-artifact@v3
+      - uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b7192a  # v3
         with:
           path: website/site
 
@@ -47,5 +47,5 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
-      - uses: actions/deploy-pages@v4
+      - uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e5f8ac598231e27e  # v4
         id: deployment

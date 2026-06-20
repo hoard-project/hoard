@@ -21,10 +21,10 @@ jobs:
     strategy:
       fail-fast: false
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@df4cb1cf17f246ab2dd04c67210db2d3e3ff53f7  # v6
 
       - name: Initialize CodeQL
-        uses: github/codeql-action/init@v3
+        uses: github/codeql-action/init@b0c4fd759e31af04931ba64d6495a5808eef89e9  # v3
         with:
           languages: rust, c-cpp
           queries: security-extended,security-and-quality
@@ -38,7 +38,7 @@ jobs:
         run: cargo build --release
 
       - name: Perform CodeQL analysis
-        uses: github/codeql-action/analyze@v3
+        uses: github/codeql-action/analyze@b0c4fd759e31af04931ba64d6495a5808eef89e9  # v3
         with:
           category: "/language:rust,c-cpp"
 
@@ -47,7 +47,7 @@ jobs:
     name: "cargo audit"
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@df4cb1cf17f246ab2dd04c67210db2d3e3ff53f7  # v6
 
       - name: Install cargo-audit
         run: cargo install cargo-audit --locked
@@ -60,7 +60,7 @@ jobs:
     name: "cargo deny"
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@df4cb1cf17f246ab2dd04c67210db2d3e3ff53f7  # v6
 
       - name: Install cargo-deny
         run: cargo install cargo-deny --locked
