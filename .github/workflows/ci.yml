@@ -44,7 +44,7 @@ jobs:
         run: cargo clippy --no-deps
 
       - name: Unit tests
-        run: cargo test --lib
+        run: cargo test
 
   # ── Build matrix: x86_64 + aarch64 ─────────────────────────
   build:
