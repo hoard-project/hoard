@@ -36,12 +36,21 @@ jobs:
       - name: Build release
         run: cargo build --release
 
-      - name: Rename + strip + checksum
+      - name: Prepare artifacts
         run: |
+          # --- Binary ---
           strip target/release/hoard
           mv target/release/hoard "target/release/${{ matrix.artifact_name }}"
           sha256sum "target/release/${{ matrix.artifact_name }}" > "target/release/${{ matrix.artifact_name }}.sha256"
-          ls -lh "target/release/${{ matrix.artifact_name }}"
+
+          # --- BPF object (compiled by build.rs) ---
+          BPF_OBJ=$(find target/release/build -name hoard.bpf.o -type f | head -1)
+          echo "BPF object: $BPF_OBJ ($(stat -c%s "$BPF_OBJ") bytes)"
+          cp "$BPF_OBJ" "target/release/${{ matrix.artifact_name }}.bpf.o"
+          sha256sum "target/release/${{ matrix.artifact_name }}.bpf.o" > "target/release/${{ matrix.artifact_name }}.bpf.o.sha256"
+
+          # --- Summary ---
+          ls -lh target/release/${{ matrix.artifact_name }}*
 
       - name: Upload to release
         uses: softprops/action-gh-release@v2
@@ -49,5 +58,7 @@ jobs:
           files: |
             target/release/${{ matrix.artifact_name }}
             target/release/${{ matrix.artifact_name }}.sha256
+            target/release/${{ matrix.artifact_name }}.bpf.o
+            target/release/${{ matrix.artifact_name }}.bpf.o.sha256
           name: ${{ github.ref_name }}
           generate_release_notes: true

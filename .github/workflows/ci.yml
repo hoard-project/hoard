@@ -15,7 +15,7 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  # ── Static checks + test (x86_64 only, architecture-agnostic) ──
+  # ── Static checks + test (architecture-agnostic) ──
   check:
     name: "fmt / clippy / test"
     runs-on: ubuntu-22.04
@@ -40,7 +40,7 @@ jobs:
       - name: Test
         run: cargo test --all-targets
 
-  # ── Build matrix: x86_64 + aarch64 ────────────────────────
+  # ── Build matrix: x86_64 + aarch64 (binary + BPF) ─────────
   build:
     name: "build (${{ matrix.target }})"
     runs-on: ${{ matrix.runner }}
@@ -70,53 +70,146 @@ jobs:
       - name: Build release
         run: cargo build --release
 
-      - name: Binary info
+      - name: Collect artifacts
         run: |
           ls -lh target/release/hoard
-          file target/release/hoard
+          BPF_OBJ=$(find target/release/build -name hoard.bpf.o -type f | head -1)
+          if [ -n "$BPF_OBJ" ] && [ -s "$BPF_OBJ" ]; then
+            echo "BPF object: $BPF_OBJ ($(stat -c%s "$BPF_OBJ") bytes)"
+            cp "$BPF_OBJ" hoard.bpf.o
+          else
+            echo "::error::BPF object not found or empty!"
+            exit 1
+          fi
 
       - name: Upload binary
         uses: actions/upload-artifact@v7
         with:
           name: hoard-${{ matrix.target }}
-          path: target/release/hoard
+          path: |
+            target/release/hoard
+            hoard.bpf.o
 
-  # ── BPF compile matrix: x86_64 + aarch64 ──────────────────
-  bpf:
-    name: "bpf (${{ matrix.bpf_arch }})"
-    runs-on: ${{ matrix.runner }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - runner: ubuntu-22.04
-            bpf_arch: x86
-          - runner: ubuntu-22.04-arm
-            bpf_arch: arm64
+  # ── E2E smoke test (x86_64, MinIO container) ───────────────
+  e2e:
+    name: "e2e (MinIO)"
+    runs-on: ubuntu-22.04
+    needs: build
+    services:
+      minio:
+        image: minio/minio:latest
+        env:
+          MINIO_ROOT_USER: minioadmin
+          MINIO_ROOT_PASSWORD: minioadmin123
+        ports:
+          - 9000:9000
+        options: >-
+          --name minio
+          server /data --console-address ":9001"
+
     steps:
       - uses: actions/checkout@v6
 
-      - name: Install clang + bpftool
+      - name: Install mc CLI
         run: |
-          sudo apt-get update
-          sudo apt-get install -y clang llvm linux-tools-common linux-tools-generic
+          curl -sL https://dl.min.io/client/mc/release/linux-amd64/mc -o /usr/local/bin/mc
+          chmod +x /usr/local/bin/mc
+          mc alias set local http://127.0.0.1:9000 minioadmin minioadmin123
+          mc mb local/test-bucket 2>/dev/null || true
 
-      - name: Generate vmlinux.h (from runner kernel BTF)
-        run: |
-          bpftool btf dump file /sys/kernel/btf/vmlinux format c > src/bpf/vmlinux.h 2>/dev/null || \
-            echo "⚠ bpftool failed, using committed vmlinux.h"
-
-      - name: Compile BPF
-        run: |
-          clang -O2 -g -target bpf -D__TARGET_ARCH_${{ matrix.bpf_arch }} \
-            -Wall -Werror \
-            -Isrc/bpf \
-            -c src/bpf/hoard.bpf.c \
-            -o hoard.bpf.o
-          ls -lh hoard.bpf.o
-
-      - name: Upload BPF object
-        uses: actions/upload-artifact@v7
+      - name: Download build artifacts
+        uses: actions/download-artifact@v6
         with:
-          name: hoard-bpf-o-${{ matrix.bpf_arch }}
-          path: hoard.bpf.o
+          name: hoard-x86_64-unknown-linux-gnu
+
+      - name: Setup hoard
+        run: |
+          chmod +x target/release/hoard
+          mkdir -p /usr/lib/hoard /var/lib/hoard/volumes
+          cp hoard.bpf.o /usr/lib/hoard/hoard.bpf.o
+          cat > /tmp/e2e.toml << 'TOML'
+          [daemon]
+          mode = "standalone"
+          service = "e2e"
+          [watch]
+          path = "/var/lib/hoard/volumes"
+          [s3]
+          endpoint = "http://127.0.0.1:9000"
+          bucket = "test-bucket"
+          prefix = "e2e"
+          region = "us-east-1"
+          access_key = "minioadmin"
+          secret_key = "minioadmin123"
+          no_sign = true
+          [gc]
+          interval_secs = 99999
+          ttl_days = 7
+          [resilience]
+          pending_db = "/tmp/pending.db"
+          max_upload_retries = 3
+          dead_letter_dir = "/tmp/dead-letter"
+          [filter]
+          extensions = ["db", "sqlite", "sqlite3", "log", "json", "csv"]
+          TOML
+
+      - name: Run hoard
+        run: |
+          target/release/hoard --config /tmp/e2e.toml > /tmp/hoard-e2e.log 2>&1 &
+          sleep 4
+          if ! pgrep hoard > /dev/null; then
+            echo "::error::Hoard failed to start"
+            cat /tmp/hoard-e2e.log
+            exit 1
+          fi
+          echo "Hoard started (PID=$(pgrep hoard))"
+
+      - name: Smoke test — create files
+        run: |
+          mkdir -p /var/lib/hoard/volumes/e2e-smoke
+          sqlite3 /var/lib/hoard/volumes/e2e-smoke/test.db \
+            "PRAGMA journal_mode=WAL; CREATE TABLE t(x);"
+          for i in $(seq 1 5); do
+            sqlite3 /var/lib/hoard/volumes/e2e-smoke/test.db "INSERT INTO t VALUES($i);"
+          done
+          echo "e2e smoke test $(date)" > /var/lib/hoard/volumes/e2e-smoke/app.log
+          echo "Created test files"
+          ls -la /var/lib/hoard/volumes/e2e-smoke/
+
+      - name: Wait for drain + verify
+        run: |
+          echo "Waiting for periodic drain (35s)..."
+          sleep 35
+
+          echo "=== Hoard logs ==="
+          grep -E "upload|drain|WAL" /tmp/hoard-e2e.log || true
+
+          echo "=== MinIO inventory ==="
+          mc ls local/test-bucket/e2e/ --recursive || true
+
+          echo "=== Assertions ==="
+          # SQLite DB
+          if mc ls local/test-bucket/e2e/ --recursive | grep -q "e2e-smoke/test.db"; then
+            echo "✅ test.db uploaded"
+          else
+            echo "::error::test.db NOT uploaded"
+            exit 1
+          fi
+
+          # Log file
+          if mc ls local/test-bucket/e2e/ --recursive | grep -q "e2e-smoke/app.log"; then
+            echo "✅ app.log uploaded"
+          else
+            echo "::error::app.log NOT uploaded"
+            exit 1
+          fi
+
+          # Content check
+          LOG_CONTENT=$(mc cat local/test-bucket/e2e/e2e-smoke/app.log 2>/dev/null)
+          if echo "$LOG_CONTENT" | grep -q "e2e smoke test"; then
+            echo "✅ app.log content verified"
+          else
+            echo "::error::app.log content mismatch"
+            exit 1
+          fi
+
+          echo "=== All e2e checks passed ==="
