@@ -51,7 +51,14 @@ mkdir -p /var/lib/hoard/volumes
 ## 4. Run
 
 ```bash
-HOARD_MODE=standalone HOARD_WATCH_ROOT=/var/lib/hoard/volumes HOARD_S3_ENDPOINT=http://127.0.0.1:9000 HOARD_S3_BUCKET=hoard-backups HOARD_S3_ACCESS_KEY=s3admin HOARD_S3_SECRET_KEY=s3admin123 HOARD_S3_NO_SIGN=true   hoard
+HOARD_MODE=standalone \
+HOARD_WATCH_ROOT=/var/lib/hoard/volumes \
+HOARD_S3_ENDPOINT=http://127.0.0.1:9000 \
+HOARD_S3_BUCKET=hoard-backups \
+HOARD_S3_ACCESS_KEY=s3admin \
+HOARD_S3_SECRET_KEY=s3admin123 \
+HOARD_S3_NO_SIGN=true \
+  hoard
 ```
 
 ## 5. Verify
