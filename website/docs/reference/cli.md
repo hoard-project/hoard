@@ -1,6 +1,6 @@
 # CLI reference
 
-```
+```text
 hoard [OPTIONS]
 ```
 

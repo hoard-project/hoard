@@ -67,7 +67,7 @@ a BPF `RingBuffer` (256 KiB capacity, overwrite-oldest).
 
 BPF gives us `{ inode, size }`. We resolve inode → full path via:
 
-```
+```text
 /proc/self/fd/N  →  symlink resolved by cargo-readlink
 ```
 
@@ -113,7 +113,7 @@ Every 30s, the drain loop:
 
 ### 7. Upload path
 
-```
+```text
 page_cache → sendfile(2) → TLS socket → S3 (SigV4)
                                               ↑
                                     Content-MD5 (ETag)
