@@ -33,12 +33,12 @@ hoard --version
 # hoard 1.0.0-beta.1
 ```
 
-## 2. Start MinIO (optional)
+## 2. Start local S3 (optional)
 
 ```bash
-docker run -d --name minio   -p 9000:9000 -p 9001:9001   -e MINIO_ROOT_USER=minioadmin   -e MINIO_ROOT_PASSWORD=minioadmin123   minio/minio:latest server /data --console-address ":9001"
+docker run -d --name s3   -p 9000:9000 -p 9001:9001   -e MINIO_ROOT_USER=s3admin   -e MINIO_ROOT_PASSWORD=s3admin123   minio/minio:latest server /data --console-address ":9001"
 
-mc alias set local http://127.0.0.1:9000 minioadmin minioadmin123
+mc alias set local http://127.0.0.1:9000 s3admin s3admin123
 mc mb local/hoard-backups
 ```
 
@@ -51,7 +51,7 @@ mkdir -p /var/lib/hoard/volumes
 ## 4. Run
 
 ```bash
-HOARD_MODE=standalone HOARD_WATCH_ROOT=/var/lib/hoard/volumes HOARD_S3_ENDPOINT=http://127.0.0.1:9000 HOARD_S3_BUCKET=hoard-backups HOARD_S3_ACCESS_KEY=minioadmin HOARD_S3_SECRET_KEY=minioadmin123 HOARD_S3_NO_SIGN=true   hoard
+HOARD_MODE=standalone HOARD_WATCH_ROOT=/var/lib/hoard/volumes HOARD_S3_ENDPOINT=http://127.0.0.1:9000 HOARD_S3_BUCKET=hoard-backups HOARD_S3_ACCESS_KEY=s3admin HOARD_S3_SECRET_KEY=s3admin123 HOARD_S3_NO_SIGN=true   hoard
 ```
 
 ## 5. Verify

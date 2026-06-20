@@ -66,7 +66,7 @@ HOARD_S3_SECRET_KEY=yyy \
 |-----------|---------|
 | Linux kernel | 5.5 (BPF trampoline + BTF) |
 | Rust | 1.82 |
-| S3 backend | any S3-compatible (MinIO, AWS, Garage, …) |
+| S3 backend | any S3-compatible (local, cloud, self-hosted, …) |
 
 ## License
 

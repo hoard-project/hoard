@@ -68,10 +68,10 @@ job "hoard" {
         data = <<EOF
 HOARD_MODE=nomad
 HOARD_WATCH_ROOT={{ env "NOMAD_ALLOC_DIR" }}/volumes
-HOARD_S3_ENDPOINT=http://minio.service.consul:9000
+HOARD_S3_ENDPOINT=http://s3.service.consul:9000
 HOARD_S3_BUCKET=hoard-backups
-HOARD_S3_ACCESS_KEY={{ with secret "kv/data/minio" }}{{ .Data.data.access_key }}{{ end }}
-HOARD_S3_SECRET_KEY={{ with secret "kv/data/minio" }}{{ .Data.data.secret_key }}{{ end }}
+HOARD_S3_ACCESS_KEY={{ with secret "kv/data/s3" }}{{ .Data.data.access_key }}{{ end }}
+HOARD_S3_SECRET_KEY={{ with secret "kv/data/s3" }}{{ .Data.data.secret_key }}{{ end }}
 HOARD_METRICS_ADDR=0.0.0.0:9150
 HOARD_DEBOUNCE_MS=100
 HOARD_DRAIN_INTERVAL=30
@@ -140,7 +140,7 @@ nomad alloc status $(nomad job allocs -t '{{ range . }}{{ if eq .ClientStatus "r
 | Feature | Standalone | Nomad |
 |---------|-----------|-------|
 | Socket | Unix domain (`/var/run/hoard.sock`) | **None** |
-| Prometheus | `0.0.0.0:9150` | Nomad service check |
+| Metrics | `0.0.0.0:9150` | Nomad service check |
 | Config | Env vars or TOML file | Nomad template + Vault |
 | Drain signal | SIGUSR1 | SIGTERM → `on_stop = "drain"` |
 | Lifecycle | systemd | Nomad scheduler |
@@ -156,6 +156,6 @@ nomad job status hoard
 curl http://nomad-client-1:9150/health
 # {"status":"ok"}
 
-# Prometheus metrics
+# Application metrics
 curl http://nomad-client-1:9150/metrics | grep hoard_
 ```

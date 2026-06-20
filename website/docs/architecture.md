@@ -23,7 +23,7 @@ flowchart TB
         MET[Metrics<br/>http :9150]
     end
 
-    subgraph "S3 (MinIO / AWS)"
+    subgraph "S3-compatible storage"
         BKT[(Bucket)]
     end
 

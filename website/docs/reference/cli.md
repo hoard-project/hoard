@@ -23,7 +23,7 @@ hoard [OPTIONS]
 | `--no-sign` | — | `false` | Disable S3 SigV4 signing |
 | `--debounce-ms <MS>` | u64 | `100` | Debounce window (ms) |
 | `--drain-interval <SECS>` | u64 | `30` | Drain interval (seconds) |
-| `--metrics-addr <ADDR>` | socket addr | `0.0.0.0:9150` | Prometheus endpoint |
+| `--metrics-addr <ADDR>` | socket addr | `0.0.0.0:9150` | Metrics endpoint |
 
 ## Examples
 

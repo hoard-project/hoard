@@ -54,7 +54,7 @@ flowchart LR
 
     ---
 
-    8 Prometheus metrics, 5 alert rules, health endpoint, dead-letter queue, exponential retry.
+    8 observability metrics, 5 alert rules, health endpoint, dead-letter queue, exponential retry.
 
 </div>
 
@@ -78,7 +78,7 @@ flowchart LR
 === "Env vars"
 
     ```bash
-    HOARD_MODE=standalone     HOARD_WATCH_ROOT=/var/lib/hoard/volumes     HOARD_S3_ENDPOINT=http://127.0.0.1:9000     HOARD_S3_BUCKET=my-backups     HOARD_S3_ACCESS_KEY=minioadmin     HOARD_S3_SECRET_KEY=minioadmin123       hoard
+    HOARD_MODE=standalone     HOARD_WATCH_ROOT=/var/lib/hoard/volumes     HOARD_S3_ENDPOINT=http://127.0.0.1:9000     HOARD_S3_BUCKET=my-backups     HOARD_S3_ACCESS_KEY=s3admin     HOARD_S3_SECRET_KEY=s3admin123       hoard
     ```
 
 === "TOML config"
@@ -105,11 +105,11 @@ flowchart LR
 
 | ✅ Perfect for | ❌ Not for |
 |---------------|-----------|
-| SQLite backup (Litestream-style, S3-native) | Sub-second real-time sync |
-| Log / JSON / CSV / Parquet shipping | Append-only streaming (use Kafka) |
+| SQLite backup (continuous WAL-based, S3-native) | Sub-second real-time sync |
+| Log / JSON / CSV / Parquet shipping | Append-only streaming (use a message broker) |
 | Nomad cluster backup (system job) | Cross-region replication |
 | Large file replication (ISO, tar) | Block-level snapshots |
 
 ## Status
 
-`v1.0.0-beta.1` · CI all green · 49 tests · 0 clippy · 33/33 deny(unsafe_code)
+`v1.0.0-beta.1` · CI all green · 49 tests · 0 clippy · 33/33 deny(unsafe_code) · 8 observability metrics

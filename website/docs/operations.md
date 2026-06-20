@@ -5,7 +5,7 @@
 ### List S3 contents
 
 ```bash
-# Via MinIO client (mc)
+# Via S3 client (mc)
 mc ls local/hoard-backups/hoard/
 mc ls -r local/hoard-backups/hoard/
 
@@ -43,7 +43,7 @@ Endpoint: `http://0.0.0.0:9150/metrics`
 | `hoard_bpf_events_total` | Counter | BPF events received |
 | `hoard_pending_db_size` | Gauge | SQLite pending database size |
 
-### Alert rules (Prometheus)
+### Alert rules
 
 ```yaml
 groups:
@@ -124,7 +124,7 @@ echo '{"reprocess_all":{}}' | nc -U /var/run/hoard.sock
 2. Verify bucket exists: `mc ls local/`
 3. Check credentials: `mc admin info local`
 4. Increase `RUST_LOG=debug` for SigV4 signing details
-5. Try `no_sign = true` for MinIO dev mode
+5. Try `no_sign = true` for local S3 dev mode
 
 ### Pending queue growing
 

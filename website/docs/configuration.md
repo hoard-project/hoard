@@ -54,7 +54,7 @@ service = "production"
 path = "/var/lib/hoard/volumes"
 
 [s3]
-endpoint   = "http://minio:9000"
+endpoint   = "http://s3:9000"
 bucket     = "backups"
 access_key = "${S3_ACCESS_KEY}"
 secret_key = "${S3_SECRET_KEY}"
@@ -115,7 +115,7 @@ More specific globs win. Declaration order breaks ties.
 |-------|------|---------|-------------|
 | `mode` | `"standalone" \| "nomad"` | `"standalone"` | Runtime mode |
 | `service` | string | `"default"` | Service name (socket path) |
-| `metrics_addr` | `host:port` | `0.0.0.0:9150` | Prometheus endpoint |
+| `metrics_addr` | `host:port` | `0.0.0.0:9150` | Metrics endpoint |
 
 ### `[s3]`
 

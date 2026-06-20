@@ -22,7 +22,7 @@ First beta release. Production-validated on dual-node Nomad cluster.
 
 ### Operations
 - `hoard ctl status|flush|restore` control commands
-- Prometheus metrics (8 counters/gauges/histograms + 5 alert rules)
+- Observability metrics (8 counters/gauges/histograms + 5 alert rules)
 - Health endpoint (`/health` → `{"status":"ok"}` or `{"status":"degraded"}`)
 - SQLite-backed pending set with crash recovery
 - Exponential backoff retry (5×, base 1s, max 60s) + dead-letter queue
