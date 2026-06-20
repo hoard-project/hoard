@@ -23,21 +23,20 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-python@v5
         with:
-          node-version: 22
+          python-version: '3.12'
 
-      - name: Install dependencies
-        working-directory: website
-        run: npm install
+      - name: Install MkDocs
+        run: pip install mkdocs-material
 
       - name: Build site
         working-directory: website
-        run: npx docusaurus build
+        run: mkdocs build
 
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: website/build
+          path: website/site
 
   deploy:
     needs: build

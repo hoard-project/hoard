@@ -1,12 +1,7 @@
----
-sidebar_position: 8
----
-
 # Environment variables
 
-:::tip Priority
-CLI flag &gt; env var &gt; TOML value &gt; default
-:::
+!!! tip "Priority"
+    CLI flag > env var > TOML value > default
 
 ## All variables
 

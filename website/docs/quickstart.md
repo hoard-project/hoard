@@ -1,45 +1,30 @@
----
-sidebar_position: 2
----
-
-import Tabs from '@theme/Tabs';
-import TabItem from '@theme/TabItem';
-
 # Quickstart
 
-:::note Kernel requirement
-Linux kernel ≥ 5.5 with BTF. Check: `uname -r` and `ls /sys/kernel/btf/vmlinux`
-:::
+!!! note "Kernel requirement"
+    Linux kernel ≥ 5.5 with BTF. Check: `uname -r` and `ls /sys/kernel/btf/vmlinux`
 
 ## 1. Install
 
-<Tabs>
-<TabItem value="github" label="GitHub Release" default>
+=== "GitHub Release"
 
-```bash
-curl -sL https://github.com/hoard-project/hoard/releases/latest/download/hoard-x86_64 \
-  -o /usr/local/bin/hoard
-curl -sL https://github.com/hoard-project/hoard/releases/latest/download/hoard-x86_64.bpf.o \
-  -o /usr/lib/hoard/hoard.bpf.o
-chmod +x /usr/local/bin/hoard
-mkdir -p /usr/lib/hoard
-```
+    ```bash
+    curl -sL https://github.com/hoard-project/hoard/releases/latest/download/hoard-x86_64       -o /usr/local/bin/hoard
+    curl -sL https://github.com/hoard-project/hoard/releases/latest/download/hoard-x86_64.bpf.o       -o /usr/lib/hoard/hoard.bpf.o
+    chmod +x /usr/local/bin/hoard
+    mkdir -p /usr/lib/hoard
+    ```
 
-</TabItem>
-<TabItem value="source" label="Build from source">
+=== "Build from source"
 
-```bash
-git clone https://github.com/hoard-project/hoard
-cd hoard
-cargo build --release
-sudo cp target/release/hoard /usr/local/bin/
-BPF=$(find target/release/build -name hoard.bpf.o | head -1)
-sudo mkdir -p /usr/lib/hoard
-sudo cp "$BPF" /usr/lib/hoard/hoard.bpf.o
-```
-
-</TabItem>
-</Tabs>
+    ```bash
+    git clone https://github.com/hoard-project/hoard
+    cd hoard
+    cargo build --release
+    sudo cp target/release/hoard /usr/local/bin/
+    BPF=$(find target/release/build -name hoard.bpf.o | head -1)
+    sudo mkdir -p /usr/lib/hoard
+    sudo cp "$BPF" /usr/lib/hoard/hoard.bpf.o
+    ```
 
 Verify:
 
@@ -51,11 +36,7 @@ hoard --version
 ## 2. Start MinIO (optional)
 
 ```bash
-docker run -d --name minio \
-  -p 9000:9000 -p 9001:9001 \
-  -e MINIO_ROOT_USER=minioadmin \
-  -e MINIO_ROOT_PASSWORD=minioadmin123 \
-  minio/minio:latest server /data --console-address ":9001"
+docker run -d --name minio   -p 9000:9000 -p 9001:9001   -e MINIO_ROOT_USER=minioadmin   -e MINIO_ROOT_PASSWORD=minioadmin123   minio/minio:latest server /data --console-address ":9001"
 
 mc alias set local http://127.0.0.1:9000 minioadmin minioadmin123
 mc mb local/hoard-backups
@@ -70,14 +51,7 @@ mkdir -p /var/lib/hoard/volumes
 ## 4. Run
 
 ```bash
-HOARD_MODE=standalone \
-HOARD_WATCH_ROOT=/var/lib/hoard/volumes \
-HOARD_S3_ENDPOINT=http://127.0.0.1:9000 \
-HOARD_S3_BUCKET=hoard-backups \
-HOARD_S3_ACCESS_KEY=minioadmin \
-HOARD_S3_SECRET_KEY=minioadmin123 \
-HOARD_S3_NO_SIGN=true \
-  hoard
+HOARD_MODE=standalone HOARD_WATCH_ROOT=/var/lib/hoard/volumes HOARD_S3_ENDPOINT=http://127.0.0.1:9000 HOARD_S3_BUCKET=hoard-backups HOARD_S3_ACCESS_KEY=minioadmin HOARD_S3_SECRET_KEY=minioadmin123 HOARD_S3_NO_SIGN=true   hoard
 ```
 
 ## 5. Verify
@@ -101,9 +75,3 @@ cp contrib/hoard.toml.example /etc/hoard/hoard.toml
 # Edit /etc/hoard/hoard.toml with your S3 credentials
 systemctl enable --now hoard
 ```
-
-## Next
-
-- [Configuration](configuration) — full v1 + v2 config reference
-- [Operations](operations) — restore, metrics, health, troubleshooting
-- [Nomad](nomad) — cluster deployment

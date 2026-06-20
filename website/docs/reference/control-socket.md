@@ -1,12 +1,7 @@
----
-sidebar_position: 9
----
-
 # Control socket API
 
-:::note
-Only available in `standalone` mode. Nomad mode has no control socket.
-:::
+!!! note
+    Only available in `standalone` mode. Nomad mode has no control socket.
 
 | Property | Value |
 |----------|-------|

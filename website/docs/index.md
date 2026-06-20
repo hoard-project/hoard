@@ -1,10 +1,7 @@
 ---
-sidebar_position: 1
-slug: /
+hide:
+  - navigation
 ---
-
-import Tabs from '@theme/Tabs';
-import TabItem from '@theme/TabItem';
 
 # Hoard
 
@@ -21,37 +18,44 @@ flowchart LR
     G --> H[🚀 sendfile→S3]
 ```
 
-<div className="features">
-  <div className="feature-card">
-    <div className="feature-icon">🐝</div>
-    <div className="feature-title">Dual VFS Hook</div>
-    <p><code>fentry/vfs_write</code> + <code>fentry/generic_perform_write</code> catches every buffered write on ext4, tmpfs, btrfs, xfs.</p>
-  </div>
-  <div className="feature-card">
-    <div className="feature-icon">⚡</div>
-    <div className="feature-title">Zero-Copy Upload</div>
-    <p><code>sendfile(2)</code> from page cache straight to TLS socket. No userspace buffer. No <code>read()</code> syscall.</p>
-  </div>
-  <div className="feature-card">
-    <div className="feature-icon">🗄️</div>
-    <div className="feature-title">SQLite Auto-Detect</div>
-    <p>WAL checkpoint for <code>.db</code> files before upload. Transparent pass-through for logs, JSON, CSV.</p>
-  </div>
-  <div className="feature-card">
-    <div className="feature-icon">🎯</div>
-    <div className="feature-title">BTF CO-RE</div>
-    <p>One BPF object, any kernel ≥ 5.5. Verified on 6.1 and 6.12. No per-kernel compilation.</p>
-  </div>
-  <div className="feature-card">
-    <div className="feature-icon">🔀</div>
-    <div className="feature-title">Dual-Mode</div>
-    <p>Standalone (Unix socket + periodic drain 30s) or Nomad system job (SSE events). Same core pipeline.</p>
-  </div>
-  <div className="feature-card">
-    <div className="feature-icon">📊</div>
-    <div className="feature-title">Production Metrics</div>
-    <p>8 Prometheus metrics, 5 alert rules, health endpoint, dead-letter queue, exponential retry.</p>
-  </div>
+<div class="grid cards" markdown>
+
+-   :material-bee:{ .lg .middle } **Dual VFS Hook**
+
+    ---
+
+    `fentry/vfs_write` + `fentry/generic_perform_write` catches every buffered write on ext4, tmpfs, btrfs, xfs.
+
+-   :material-flash:{ .lg .middle } **Zero-Copy Upload**
+
+    ---
+
+    `sendfile(2)` from page cache straight to TLS socket. No userspace buffer. No `read()` syscall.
+
+-   :material-database:{ .lg .middle } **SQLite Auto-Detect**
+
+    ---
+
+    WAL checkpoint for `.db` files before upload. Transparent pass-through for logs, JSON, CSV.
+
+-   :material-target:{ .lg .middle } **BTF CO-RE**
+
+    ---
+
+    One BPF object, any kernel ≥ 5.5. Verified on 6.1 and 6.12. No per-kernel compilation.
+
+-   :material-source-branch:{ .lg .middle } **Dual-Mode**
+
+    ---
+
+    Standalone (Unix socket + periodic drain 30s) or Nomad system job (SSE events). Same core pipeline.
+
+-   :material-chart-bar:{ .lg .middle } **Production Metrics**
+
+    ---
+
+    8 Prometheus metrics, 5 alert rules, health endpoint, dead-letter queue, exponential retry.
+
 </div>
 
 ---
@@ -60,51 +64,40 @@ flowchart LR
 
 | Metric | Value |
 |--------|-------|
-| Binary (stripped) | <span className="badge badge-green">4.2 MB</span> |
-| BPF object (CO-RE) | <span className="badge badge-blue">808 KB</span> |
-| Runtime RSS | <span className="badge badge-green">~30 MB</span> |
-| Kernel | <span className="badge badge-amber">≥ 5.5</span> |
-| Rust MSRV | <span className="badge badge-blue">1.82</span> |
-| Crate deps | <span className="badge badge-green">22</span> |
-| Tests | <span className="badge badge-green">49/49</span> |
-| Clippy warnings | <span className="badge badge-green">0</span> |
+| Binary (stripped) | `4.2 MB` |
+| BPF object (CO-RE) | `808 KB` |
+| Runtime RSS | `~30 MB` |
+| Kernel | `≥ 5.5` |
+| Rust MSRV | `1.82` |
+| Crate deps | `22` |
+| Tests | `49/49` |
+| Clippy warnings | `0` |
 
 ## 30-second start
 
-<Tabs>
-<TabItem value="env" label="Env vars" default>
+=== "Env vars"
 
-```bash
-HOARD_MODE=standalone \
-HOARD_WATCH_ROOT=/var/lib/hoard/volumes \
-HOARD_S3_ENDPOINT=http://127.0.0.1:9000 \
-HOARD_S3_BUCKET=my-backups \
-HOARD_S3_ACCESS_KEY=minioadmin \
-HOARD_S3_SECRET_KEY=minioadmin123 \
-  hoard
-```
+    ```bash
+    HOARD_MODE=standalone     HOARD_WATCH_ROOT=/var/lib/hoard/volumes     HOARD_S3_ENDPOINT=http://127.0.0.1:9000     HOARD_S3_BUCKET=my-backups     HOARD_S3_ACCESS_KEY=minioadmin     HOARD_S3_SECRET_KEY=minioadmin123       hoard
+    ```
 
-</TabItem>
-<TabItem value="toml" label="TOML config">
+=== "TOML config"
 
-```toml
-[daemon]
-mode = "standalone"
+    ```toml
+    [daemon]
+    mode = "standalone"
 
-[watch]
-path = "/var/lib/hoard/volumes"
+    [watch]
+    path = "/var/lib/hoard/volumes"
 
-[s3]
-endpoint   = "http://127.0.0.1:9000"
-bucket     = "my-backups"
-access_key = "${S3_ACCESS_KEY}"
-secret_key = "${S3_SECRET_KEY}"
-```
+    [s3]
+    endpoint   = "http://127.0.0.1:9000"
+    bucket     = "my-backups"
+    access_key = "${S3_ACCESS_KEY}"
+    secret_key = "${S3_SECRET_KEY}"
+    ```
 
-</TabItem>
-</Tabs>
-
-→ **[Full quickstart →](quickstart)**
+→ **[Full quickstart →](quickstart.md)**
 
 ---
 
@@ -119,10 +112,4 @@ secret_key = "${S3_SECRET_KEY}"
 
 ## Status
 
-<div style={{display: 'flex', gap: '0.75rem', flexWrap: 'wrap', margin: '1rem 0'}}>
-  <span className="badge badge-green">v1.0.0-beta.1</span>
-  <span className="badge badge-green">CI: all green</span>
-  <span className="badge badge-green">49 tests</span>
-  <span className="badge badge-green">0 clippy warnings</span>
-  <span className="badge badge-blue">33/33 #![deny(unsafe_code)]</span>
-</div>
+`v1.0.0-beta.1` · CI all green · 49 tests · 0 clippy · 33/33 deny(unsafe_code)

@@ -1,15 +1,7 @@
----
-sidebar_position: 3
----
-
 # Configuration
 
-Hoard supports two config formats: **v1** (flat TOML) and **v2**
-(StorageClass + Volume model).
-
-:::tip Priority
-CLI flag &gt; env var &gt; TOML value &gt; default
-:::
+!!! tip "Priority"
+    CLI flag > env var > TOML value > default
 
 ## v1 Quick config
 
@@ -36,10 +28,9 @@ extensions = ["db", "sqlite", "sqlite3", "log", "json", "csv"]
 
 ## v2: StorageClass + Volume model
 
-:::note
-v2 config uses `conf.d/` directory hot-reload. Place `.toml` files in
-`/etc/hoard/conf.d/` — Hoard watches this directory and reloads on change.
-:::
+!!! note
+    v2 config uses `conf.d/` directory hot-reload. Place `.toml` files in
+    `/etc/hoard/conf.d/` — Hoard watches this directory and reloads on change.
 
 ### Concepts
 
