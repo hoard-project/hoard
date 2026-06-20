@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="website/docs/assets/logo.svg" alt="Hoard" width="160">
+</p>
+
 # Hoard — eBPF file-change replication daemon
 
 [![CI](https://github.com/hoard-project/hoard/actions/workflows/ci.yml/badge.svg)](https://github.com/hoard-project/hoard/actions/workflows/ci.yml)
