@@ -7,7 +7,7 @@
 #![deny(unsafe_code)]
 
 use super::v2::ResolvedVolume;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::RwLock;
 
 /// Lightweight volume registry for path-to-config resolution.
@@ -88,11 +88,44 @@ impl VolumeRegistry {
 
     /// Resolve a file path to its volume config.
     pub fn resolve(&self, file_path: &Path, watch_root: &Path) -> ResolvedVolume {
+        self.resolve_with_root(file_path, watch_root).0
+    }
+
+    /// Resolve a file path to its volume config and the effective root.
+    /// The root is the volume's `base_dir` (if set and the file is under it),
+    /// otherwise `watch_root`.
+    pub fn resolve_with_root(&self, file_path: &Path, watch_root: &Path) -> (ResolvedVolume, PathBuf) {
         let guard = self
             .volumes
             .read()
             .expect("VolumeRegistry read lock poisoned");
 
+        // Try each volume's base_dir first, then fall back to watch_root.
+        for vol in guard.iter() {
+            let root = if let Some(ref base) = vol.base_dir {
+                if let Ok(rel) = file_path.strip_prefix(base) {
+                    let rel = rel.to_string_lossy().to_string().trim_start_matches("./").to_string();
+                    if matches_glob(&vol.match_glob, &rel) {
+                        return (vol.clone(), base.clone());
+                    }
+                }
+                // Not under this base_dir, skip this volume
+                continue;
+            } else {
+                watch_root.to_path_buf()
+            };
+
+            let rel = match file_path.strip_prefix(&root) {
+                Ok(r) => r.to_string_lossy().to_string(),
+                Err(_) => continue,
+            };
+            let rel = rel.trim_start_matches("./");
+            if matches_glob(&vol.match_glob, rel) {
+                return (vol.clone(), root);
+            }
+        }
+
+        // Fallback: try watch_root against all volumes (legacy behavior).
         let rel = match file_path.strip_prefix(watch_root) {
             Ok(r) => r.to_string_lossy().to_string(),
             Err(_) => file_path.to_string_lossy().to_string(),
@@ -101,15 +134,13 @@ impl VolumeRegistry {
 
         for vol in guard.iter() {
             if matches_glob(&vol.match_glob, rel) {
-                return vol.clone();
+                return (vol.clone(), watch_root.to_path_buf());
             }
         }
 
-        // Fallback: last volume (catch-all).
-        guard
-            .last()
-            .cloned()
-            .expect("VolumeRegistry must have at least one volume")
+        // Ultimate fallback: last volume (catch-all).
+        let last = guard.last().cloned().expect("VolumeRegistry must have at least one volume");
+        (last, watch_root.to_path_buf())
     }
 }
 
@@ -230,6 +261,7 @@ mod tests {
             encryption: false,
             on_stop: super::super::v2::OnStop::Drain,
             on_delete: super::super::v2::OnDelete::Keep,
+            base_dir: None,
         }
     }
 

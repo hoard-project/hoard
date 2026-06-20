@@ -230,6 +230,10 @@ pub struct ResolvedVolume {
     pub encryption: bool,
     pub on_stop: OnStop,
     pub on_delete: OnDelete,
+    /// Base directory for this volume's file matching.
+    /// For static config volumes this is `None` (fall back to global `watch_path`).
+    /// For Nomad meta-discovered volumes this points to the alloc directory.
+    pub base_dir: Option<std::path::PathBuf>,
 }
 
 impl ResolvedVolume {
@@ -414,6 +418,7 @@ pub fn resolve_volumes(v2: &ConfigV2) -> Result<Vec<ResolvedVolume>> {
             encryption,
             on_stop,
             on_delete,
+            base_dir: None,
         });
     }
 
@@ -439,6 +444,7 @@ pub fn resolve_volumes(v2: &ConfigV2) -> Result<Vec<ResolvedVolume>> {
             encryption: v2.defaults.encryption.unwrap_or(false),
             on_stop: OnStop::parse(&v2.defaults.on_stop),
             on_delete: OnDelete::parse(&v2.defaults.on_delete),
+            base_dir: None,
         });
     }
 
@@ -672,6 +678,7 @@ ttl = "14d"
             encryption: false,
             on_stop: OnStop::Drain,
             on_delete: OnDelete::Keep,
+            base_dir: None,
         };
 
         assert!(v.should_monitor(std::path::Path::new("/var/lib/hoard/volumes/test/data.db")));
@@ -697,6 +704,7 @@ ttl = "14d"
             encryption: false,
             on_stop: OnStop::Drain,
             on_delete: OnDelete::Keep,
+            base_dir: None,
         };
 
         assert!(v.should_monitor(std::path::Path::new("/var/lib/hoard/volumes/test/data.db")));

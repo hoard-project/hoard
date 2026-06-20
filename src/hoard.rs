@@ -205,13 +205,15 @@ pub struct HoardReady {
 
 impl HoardReady {
     /// Resolve upload config for a given file path.
+    /// Returns (s3_prefix, retries, root) where root is the volume's base_dir
+    /// or the global watch_root.
     fn resolve_upload_params(
         registry: &VolumeRegistry,
         watch_root: &std::path::Path,
         path: &std::path::Path,
-    ) -> (String, u32) {
-        let vol = registry.resolve(path, watch_root);
-        (vol.s3_prefix, vol.retries)
+    ) -> (String, u32, std::path::PathBuf) {
+        let (vol, root) = registry.resolve_with_root(path, watch_root);
+        (vol.s3_prefix, vol.retries, root)
     }
 
     /// Per-volume OnStop policy-aware graceful shutdown.
@@ -231,7 +233,7 @@ impl HoardReady {
         let mut uploaded = 0u64;
         let mut failed = 0u64;
         for path in &to_upload {
-            let (prefix, _) = Self::resolve_upload_params(registry, watch_root, path);
+            let (prefix, _, _) = Self::resolve_upload_params(registry, watch_root, path);
             match Self::upload_file(
                 s3,
                 path,
@@ -282,6 +284,12 @@ impl HoardReady {
 
         // ── Nomad meta auto-discovery (if enabled) ──
         let meta_discovery = if self.config.nomad_meta_enabled {
+            tracing::info!(
+                meta_enabled = true,
+                poll_secs = self.config.nomad_meta_poll_secs,
+                nomad_addr = ?self.config.nomad_addr,
+                "Nomad meta auto-discovery enabled"
+            );
             let poll_secs = self.config.nomad_meta_poll_secs;
             let watch_path_str = self.config.watch_path.to_string_lossy().to_string();
             let token = self.config.nomad_token.clone();
@@ -294,16 +302,22 @@ impl HoardReady {
                 )
             })
         } else {
+            tracing::info!("Nomad meta auto-discovery disabled");
             None
         };
-        let mut meta_timer = if meta_discovery.is_some() {
-            let mut t =
-                tokio::time::interval(Duration::from_secs(self.config.nomad_meta_poll_secs));
-            t.tick().await; // skip first immediate tick
-            Some(t)
-        } else {
-            None
-        };
+        // Meta discovery channel: background timer -> select!
+        let (meta_tx, mut meta_rx) = tokio::sync::mpsc::channel::<()>(1);
+        if meta_discovery.is_some() {
+            let poll_secs = self.config.nomad_meta_poll_secs;
+            tokio::spawn(async move {
+                let mut ticker = tokio::time::interval(Duration::from_secs(poll_secs));
+                ticker.tick().await; // skip first immediate tick
+                loop {
+                    ticker.tick().await;
+                    let _ = meta_tx.send(()).await;
+                }
+            });
+        }
 
         let mut gc_timer = tokio::time::interval(gc_interval);
         gc_timer.tick().await;
@@ -439,7 +453,7 @@ impl HoardReady {
                                 guard.drain()
                             };
                             for path in &to_upload {
-                                let (prefix, _) = Self::resolve_upload_params(&registry, &watch_root, path);
+                                let (prefix, _, _) = Self::resolve_upload_params(&registry, &watch_root, path);
                                 if let Err(e) = Self::upload_file(
                                     &s3, path, &watch_root, &prefix,
                                     &retry_cfg, &pending, &dead_letter_dir,
@@ -465,7 +479,7 @@ impl HoardReady {
                         guard.drain()
                     };
                     for path in &to_upload {
-                        let (prefix, _) = Self::resolve_upload_params(&registry, &watch_root, path);
+                        let (prefix, _, _) = Self::resolve_upload_params(&registry, &watch_root, path);
                         if let Err(e) = Self::upload_file(
                             &s3, path, &watch_root, &prefix,
                             &retry_cfg, &pending, &dead_letter_dir,
@@ -527,7 +541,7 @@ impl HoardReady {
                         guard.drain()
                     };
                     for path in &to_upload {
-                        let (prefix, _) = Self::resolve_upload_params(&registry, &watch_root, path);
+                        let (prefix, _, _) = Self::resolve_upload_params(&registry, &watch_root, path);
                         if let Err(e) = Self::upload_file(
                             &s3, path, &watch_root, &prefix,
                             &retry_cfg, &pending, &dead_letter_dir,
@@ -570,25 +584,34 @@ impl HoardReady {
                 }
 
                 // ── Nomad meta refresh ──
-                Some(_) = async {
-                    if let Some(ref mut t) = meta_timer {
-                        t.tick().await;
-                        Some(())
-                    } else {
-                        std::future::pending::<()>().await;
-                        None
-                    }
-                } => {
+                _ = meta_rx.recv() => {
                     if let Some(ref md) = meta_discovery {
                         match md.discover().await {
                             Ok(meta_vols) => {
                                 if !meta_vols.is_empty() {
-                                    tracing::info!(count = meta_vols.len(), "Nomad meta refresh: discovered volumes");
-                                    // Merge: meta volumes first, then file-based volumes
+                                    // Merge: static config volumes + discovered meta volumes
                                     let mut merged = meta_vols;
-                                    merged.extend(registry.to_vec());
+                                    for v in registry.to_vec() {
+                                        if !v.name.starts_with("nomad-") {
+                                            merged.push(v);
+                                        }
+                                    }
                                     registry.reload(merged);
                                     tracing::info!(total = registry.len(), "volume registry updated with Nomad meta");
+
+                                    // Trigger a one-shot scan for newly discovered volumes.
+                                    let s3_scan = s3.clone();
+                                    let reg_scan = registry.clone();
+                                    let filter_scan = filter.clone();
+                                    let cache_scan = inode_cache.clone();
+                                    let root_scan = watch_root.clone();
+                                    tokio::spawn(async move {
+                                        let f = filter_scan.lock().await;
+                                        match run_initial_scan(&root_scan, &f, &s3_scan, &reg_scan, &cache_scan).await {
+                                            Ok(stats) => tracing::info!(?stats, "meta discovery scan complete"),
+                                            Err(e) => tracing::error!(%e, "meta discovery scan failed"),
+                                        }
+                                    });
                                 }
                             }
                             Err(e) => tracing::warn!(%e, "Nomad meta refresh failed"),
@@ -952,6 +975,17 @@ async fn run_initial_scan(
     let mut stats = ScanStats::default();
     let mut dirs = vec![watch_root.to_path_buf()];
 
+    // Also scan per-volume base_dirs (e.g. Nomad alloc directories).
+    let mut volume_base_dirs: Vec<std::path::PathBuf> = Vec::new();
+    for v in registry.iter() {
+        if let Some(ref base) = v.base_dir {
+            if base.is_dir() {
+                dirs.push(base.clone());
+                volume_base_dirs.push(base.clone());
+            }
+        }
+    }
+
     // Collect all matching files first so we can upload them concurrently
     // with a semaphore cap (avoids flooding the S3 endpoint).
     let mut files_to_upload: Vec<std::path::PathBuf> = Vec::new();
@@ -977,16 +1011,23 @@ async fn run_initial_scan(
 
             if meta.is_dir() && !meta.is_symlink() {
                 dirs.push(path);
-            } else if meta.is_file() && filter.should_monitor(&path) {
-                stats.found += 1;
+            } else if meta.is_file() {
+                // Accept file if it passes the global watch filter, OR
+                // if it lives under a volume-specific base_dir (e.g. Nomad alloc).
+                let is_under_volume_dir = volume_base_dirs.iter().any(|b| path.starts_with(b));
+                let accepted = filter.should_monitor(&path)
+                    || (is_under_volume_dir && registry.iter().any(|v| v.should_monitor(&path)));
+                if accepted {
+                    stats.found += 1;
 
-                // Fill cache
-                use std::os::unix::fs::MetadataExt;
-                let dev = meta.dev();
-                let ino = meta.ino();
-                inode_cache.insert(dev, ino, path.clone()).await;
+                    // Fill cache
+                    use std::os::unix::fs::MetadataExt;
+                    let dev = meta.dev();
+                    let ino = meta.ino();
+                    inode_cache.insert(dev, ino, path.clone()).await;
 
-                files_to_upload.push(path);
+                    files_to_upload.push(path);
+                }
             }
         }
     }
@@ -1009,8 +1050,8 @@ async fn run_initial_scan(
             let permit = semaphore.clone();
             join_set.spawn(async move {
                 let _permit = permit.acquire().await;
-                let (prefix, retries) = HoardReady::resolve_upload_params(&reg, &watch_root, &path);
-                HoardReady::upload_file_once_scan(&s3, &path, &watch_root, &prefix, retries).await;
+                let (prefix, retries, root) = HoardReady::resolve_upload_params(&reg, &watch_root, &path);
+                HoardReady::upload_file_once_scan(&s3, &path, &root, &prefix, retries).await;
             });
         }
 

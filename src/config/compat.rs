@@ -292,6 +292,7 @@ pub fn load_v1_with_default_volume(
         encryption: false,
         on_stop: super::v2::OnStop::Drain,
         on_delete: super::v2::OnDelete::Keep,
+        base_dir: None,
     };
     Ok((legacy, vec![vol]))
 }
@@ -310,6 +311,7 @@ pub fn default_single_volume() -> Vec<super::v2::ResolvedVolume> {
         encryption: false,
         on_stop: super::v2::OnStop::Drain,
         on_delete: super::v2::OnDelete::Keep,
+        base_dir: None,
     }]
 }
 
