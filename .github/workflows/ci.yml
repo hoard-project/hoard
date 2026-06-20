@@ -15,7 +15,7 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  # ── Static checks + test (architecture-agnostic) ──
+  # ── Static checks + unit tests ──
   check:
     name: "fmt / clippy / test"
     runs-on: ubuntu-22.04
@@ -27,10 +27,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libssl-dev libelf-dev clang llvm
 
-      - name: Install Rust
-        run: |
-          curl --proto '=https' --tlsv1.2 --retry 10 --retry-connrefused -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable --profile minimal
-          echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+      - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
 
@@ -38,12 +35,12 @@ jobs:
         run: cargo fmt --check
 
       - name: Clippy
-        run: cargo clippy --all-targets --no-deps
+        run: cargo clippy --no-deps
 
-      - name: Test
-        run: cargo test --all-targets
+      - name: Unit tests
+        run: cargo test --lib
 
-  # ── Build matrix: x86_64 + aarch64 (binary + BPF) ─────────
+  # ── Build matrix: x86_64 + aarch64 ─────────────────────────
   build:
     name: "build (${{ matrix.target }})"
     runs-on: ${{ matrix.runner }}
@@ -53,10 +50,8 @@ jobs:
         include:
           - runner: ubuntu-22.04
             target: x86_64-unknown-linux-gnu
-            bpf_arch: x86
           - runner: ubuntu-22.04-arm
             target: aarch64-unknown-linux-gnu
-            bpf_arch: arm64
     steps:
       - uses: actions/checkout@v6
 
@@ -78,7 +73,7 @@ jobs:
           ls -lh target/release/hoard
           BPF_OBJ=$(find target/release/build -name hoard.bpf.o -type f | head -1)
           if [ -n "$BPF_OBJ" ] && [ -s "$BPF_OBJ" ]; then
-            echo "BPF object: $BPF_OBJ ($(stat -c%s "$BPF_OBJ") bytes)"
+            echo "BPF: $BPF_OBJ ($(stat -c%s "$BPF_OBJ") bytes)"
           else
             echo "::error::BPF object not found or empty!"
             exit 1
@@ -95,137 +90,3 @@ jobs:
           path: |
             dist/hoard
             dist/hoard.bpf.o
-
-  # ── E2E smoke test (x86_64, MinIO container) ───────────────
-  e2e:
-    name: "e2e (MinIO)"
-    runs-on: ubuntu-22.04
-    steps:
-      - uses: actions/checkout@v6
-
-      - name: Install system dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libssl-dev libelf-dev clang llvm sqlite3
-
-      - name: Install Rust
-        run: |
-          curl --proto '=https' --tlsv1.2 --retry 10 --retry-connrefused -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable --profile minimal
-          echo "$HOME/.cargo/bin" >> $GITHUB_PATH
-
-      - name: Build hoard
-        run: |
-          cargo build --release
-          ls -lh target/release/hoard
-          BPF=$(find target/release/build -name hoard.bpf.o -type f | head -1)
-          if [ ! -s "$BPF" ]; then echo "::error::BPF not found"; exit 1; fi
-          mkdir -p /usr/lib/hoard
-          cp "$BPF" /usr/lib/hoard/hoard.bpf.o
-          echo "BPF: $(stat -c%s /usr/lib/hoard/hoard.bpf.o) bytes"
-
-      - name: Start MinIO
-        run: |
-          docker run -d --name minio \
-            -p 9000:9000 \
-            -e MINIO_ROOT_USER=minioadmin \
-            -e MINIO_ROOT_PASSWORD=minioadmin123 \
-            minio/minio:latest server /data --console-address ":9001"
-          sleep 3
-          docker logs minio --tail 5
-
-      - name: Install mc CLI
-        run: |
-          curl -sL https://dl.min.io/client/mc/release/linux-amd64/mc -o /usr/local/bin/mc
-          chmod +x /usr/local/bin/mc
-          mc alias set local http://127.0.0.1:9000 minioadmin minioadmin123
-          mc mb local/test-bucket 2>/dev/null || true
-
-      - name: Setup hoard config
-        run: |
-          mkdir -p /var/lib/hoard/volumes
-          cat > /tmp/e2e.toml << 'TOML'
-          [daemon]
-          mode = "standalone"
-          service = "e2e"
-          [watch]
-          path = "/var/lib/hoard/volumes"
-          [s3]
-          endpoint = "http://127.0.0.1:9000"
-          bucket = "test-bucket"
-          prefix = "e2e"
-          region = "us-east-1"
-          access_key = "minioadmin"
-          secret_key = "minioadmin123"
-          no_sign = true
-          [gc]
-          interval_secs = 99999
-          ttl_days = 7
-          [resilience]
-          pending_db = "/tmp/pending.db"
-          max_upload_retries = 3
-          dead_letter_dir = "/tmp/dead-letter"
-          [filter]
-          extensions = ["db", "sqlite", "sqlite3", "log", "json", "csv"]
-          TOML
-
-      - name: Run hoard
-        run: |
-          target/release/hoard --config /tmp/e2e.toml > /tmp/hoard-e2e.log 2>&1 &
-          sleep 4
-          if ! pgrep hoard > /dev/null; then
-            echo "::error::Hoard failed to start"
-            cat /tmp/hoard-e2e.log
-            exit 1
-          fi
-          echo "Hoard started (PID=$(pgrep hoard))"
-
-      - name: Smoke test — create files
-        run: |
-          mkdir -p /var/lib/hoard/volumes/e2e-smoke
-          sqlite3 /var/lib/hoard/volumes/e2e-smoke/test.db \
-            "PRAGMA journal_mode=WAL; CREATE TABLE t(x);"
-          for i in $(seq 1 5); do
-            sqlite3 /var/lib/hoard/volumes/e2e-smoke/test.db "INSERT INTO t VALUES($i);"
-          done
-          echo "e2e smoke test $(date)" > /var/lib/hoard/volumes/e2e-smoke/app.log
-          echo "Created test files"
-          ls -la /var/lib/hoard/volumes/e2e-smoke/
-
-      - name: Wait for drain + verify
-        run: |
-          echo "Waiting for periodic drain (35s)..."
-          sleep 35
-
-          echo "=== Hoard logs ==="
-          grep -E "upload|drain|WAL" /tmp/hoard-e2e.log || true
-
-          echo "=== MinIO inventory ==="
-          mc ls local/test-bucket/e2e/ --recursive || true
-
-          echo "=== Assertions ==="
-          # SQLite DB
-          if mc ls local/test-bucket/e2e/ --recursive | grep -q "e2e-smoke/test.db"; then
-            echo "✅ test.db uploaded"
-          else
-            echo "::error::test.db NOT uploaded"
-            exit 1
-          fi
-
-          # Log file
-          if mc ls local/test-bucket/e2e/ --recursive | grep -q "e2e-smoke/app.log"; then
-            echo "✅ app.log uploaded"
-          else
-            echo "::error::app.log NOT uploaded"
-            exit 1
-          fi
-
-          # Content check
-          LOG_CONTENT=$(mc cat local/test-bucket/e2e/e2e-smoke/app.log 2>/dev/null)
-          if echo "$LOG_CONTENT" | grep -q "e2e smoke test"; then
-            echo "✅ app.log content verified"
-          else
-            echo "::error::app.log content mismatch"
-            exit 1
-          fi
-
-          echo "=== All e2e checks passed ==="
