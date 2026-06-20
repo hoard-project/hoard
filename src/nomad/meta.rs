@@ -26,6 +26,7 @@
 //!
 //! Meta volumes take priority over conf.d volumes. If both a file-based
 //! volume and a meta volume match the same path, the meta volume wins.
+#![deny(unsafe_code)]
 
 use crate::config::v2::{OnDelete, OnStop, ResolvedVolume};
 use anyhow::{Context, Result};

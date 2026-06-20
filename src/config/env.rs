@@ -3,6 +3,7 @@
 //!
 //! Supports `${ENV_VAR}` placeholders.  Missing variables are
 //! silently left as literals (the caller should validate).
+#![deny(unsafe_code)]
 
 pub fn expand_env(s: &str) -> String {
     let mut result = String::with_capacity(s.len());

@@ -11,7 +11,13 @@
 //! The wrapper guarantees Hoard will only ever see:
 //!   - the old file (if rename hasn't happened yet), or
 //!   - the new complete file (after rename)
+//!
 //! It will NEVER see a half-written file.
+//!
+//! # Safety
+//! This binary uses two `libc::fsync` calls (temp file + parent dir) —
+//! the only unsafe operations. Both operate on valid fds from `File::open`.
+#![allow(unsafe_code)]
 
 use std::env;
 use std::fs::{self, File, OpenOptions};
@@ -72,7 +78,9 @@ fn atomic_write(target: &Path, reader: &mut impl io::Read) -> io::Result<()> {
     let bytes_written = io::copy(reader, &mut f)?;
     f.flush()?;
 
-    // fsync the temp file — data-on-disk before rename
+    // SAFETY: `fd` is a valid file descriptor from `File::open` above.
+    // `fsync` synchronizes the file's in-core state with storage — no memory
+    // safety concerns (libc call, operates on fd only).
     let fd = f.as_raw_fd();
     unsafe { libc::fsync(fd) };
 
@@ -82,6 +90,8 @@ fn atomic_write(target: &Path, reader: &mut impl io::Read) -> io::Result<()> {
     // Best-effort fsync on the parent directory to commit the rename.
     // Not strictly required (ext4/xfs journal the rename), but belt-and-suspenders.
     let dir = File::open(parent)?;
+    // SAFETY: `dir` is a valid file descriptor from `File::open` above,
+    // pointing to the parent directory. Same libc safety invariants as above.
     unsafe { libc::fsync(dir.as_raw_fd()) };
 
     eprintln!(

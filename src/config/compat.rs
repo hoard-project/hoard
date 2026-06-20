@@ -4,6 +4,7 @@
 //! v1 flat configs are loaded and mapped to the same `LegacyConfig`
 //! struct that ValidatedConfig wraps.  CLI overrides work identically
 //! for both v1 and v2 sources.
+#![deny(unsafe_code)]
 
 use anyhow::{Context, Result};
 use serde::Deserialize;

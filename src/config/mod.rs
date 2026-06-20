@@ -11,6 +11,7 @@
 //!
 //! v1 configs are translated to a single default volume so existing
 //! deployments keep working without changes.
+#![deny(unsafe_code)]
 
 mod compat;
 pub mod env;

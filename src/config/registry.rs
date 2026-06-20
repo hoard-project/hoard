@@ -4,6 +4,7 @@
 //! (most-specific glob first).  When a BPF event triggers,
 //! `registry.resolve(file_path)` returns the matching volume's
 //! upload config.
+#![deny(unsafe_code)]
 
 use super::v2::ResolvedVolume;
 use std::path::Path;
@@ -292,6 +293,7 @@ mod tests {
     }
 }
 
+#[cfg(test)]
 mod tests_ttl {
     use super::parse_ttl;
 

@@ -4,6 +4,7 @@
 //! Inspired by Kubernetes StorageClass / PVC:
 //!   StorageClass = reusable policy template (TTL, retries, encryption)
 //!   Volume       = tenant binding (path glob → class + S3 prefix)
+#![deny(unsafe_code)]
 
 use anyhow::{Context, Result};
 use serde::Deserialize;
@@ -573,7 +574,7 @@ extensions = ["db", "wal"]
         assert_eq!(v.name, "postgres");
         assert_eq!(v.ttl, "90d"); // from class
         assert_eq!(v.retries, 10); // from class
-        assert_eq!(v.encryption, true); // from class
+        assert!(v.encryption); // from class
         assert_eq!(v.extensions, vec!["db", "wal"]); // volume override
         assert_eq!(v.s3_prefix, "tenants/pg");
     }

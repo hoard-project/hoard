@@ -331,7 +331,7 @@ mod tests {
     fn read_write_roundtrip() {
         let mut tmp = NamedTempFile::new().unwrap();
         tmp.write_all(b"hoard test data").unwrap();
-        let mut f = tmp.reopen().unwrap();
+        let f = tmp.reopen().unwrap();
         use std::os::fd::AsRawFd;
         let fd = f.as_raw_fd();
 
