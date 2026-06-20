@@ -107,14 +107,14 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
 
-      - name: Build hoard (debug for speed)
+      - name: Build hoard
         run: |
-          cargo build
-          ls -lh target/debug/hoard
-          # Find BPF object
-          BPF=$(find target/debug/build -name hoard.bpf.o -type f | head -1)
-          cp "$BPF" /usr/lib/hoard/hoard.bpf.o
+          cargo build --release
+          ls -lh target/release/hoard
+          BPF=$(find target/release/build -name hoard.bpf.o -type f | head -1)
+          if [ ! -s "$BPF" ]; then echo "::error::BPF not found"; exit 1; fi
           mkdir -p /usr/lib/hoard
+          cp "$BPF" /usr/lib/hoard/hoard.bpf.o
           echo "BPF: $(stat -c%s /usr/lib/hoard/hoard.bpf.o) bytes"
 
       - name: Start MinIO
@@ -164,7 +164,7 @@ jobs:
 
       - name: Run hoard
         run: |
-          target/debug/hoard --config /tmp/e2e.toml > /tmp/hoard-e2e.log 2>&1 &
+          target/release/hoard --config /tmp/e2e.toml > /tmp/hoard-e2e.log 2>&1 &
           sleep 4
           if ! pgrep hoard > /dev/null; then
             echo "::error::Hoard failed to start"
