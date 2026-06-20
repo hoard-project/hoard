@@ -119,12 +119,15 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: hoard-x86_64-unknown-linux-gnu
+          path: artifacts
 
       - name: Setup hoard
         run: |
-          chmod +x target/release/hoard
+          ls -laR artifacts/
+          chmod +x artifacts/target/release/hoard
           mkdir -p /usr/lib/hoard /var/lib/hoard/volumes
-          cp hoard.bpf.o /usr/lib/hoard/hoard.bpf.o
+          cp artifacts/hoard.bpf.o /usr/lib/hoard/hoard.bpf.o
+          artifacts/target/release/hoard --version || true
           cat > /tmp/e2e.toml << 'TOML'
           [daemon]
           mode = "standalone"
@@ -152,7 +155,7 @@ jobs:
 
       - name: Run hoard
         run: |
-          target/release/hoard --config /tmp/e2e.toml > /tmp/hoard-e2e.log 2>&1 &
+          artifacts/target/release/hoard --config /tmp/e2e.toml > /tmp/hoard-e2e.log 2>&1 &
           sleep 4
           if ! pgrep hoard > /dev/null; then
             echo "::error::Hoard failed to start"
