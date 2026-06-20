@@ -80,7 +80,6 @@ jobs:
             echo "::error::BPF object not found or empty!"
             exit 1
           fi
-          # Flatten to dist/ for simpler artifact handling
           mkdir -p dist
           cp target/release/hoard dist/hoard
           cp "$BPF_OBJ" dist/hoard.bpf.o
@@ -90,7 +89,9 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: hoard-${{ matrix.target }}
-          path: dist/
+          path: |
+            dist/hoard
+            dist/hoard.bpf.o
 
   # ── E2E smoke test (x86_64, MinIO container) ───────────────
   e2e:
@@ -124,15 +125,12 @@ jobs:
 
       - name: Setup hoard
         run: |
-          ls -la
-          HOARD=$(find . -name hoard -type f -not -path "./.git/*" | head -1)
-          if [ -z "$HOARD" ]; then echo "::error::hoard binary not found"; ls -laR; exit 1; fi
-          echo "Found hoard: $HOARD"
-          ln -sf "$(realpath "$HOARD")" /usr/local/bin/hoard
-          chmod +x /usr/local/bin/hoard
+          ls -laR dist/
+          [ -f dist/hoard ] || { echo "::error::dist/hoard not found"; exit 1; }
+          [ -f dist/hoard.bpf.o ] || { echo "::error::dist/hoard.bpf.o not found"; exit 1; }
+          ln -sf "$(realpath dist/hoard)" /usr/local/bin/hoard
           mkdir -p /usr/lib/hoard /var/lib/hoard/volumes
-          BPF=$(find . -name hoard.bpf.o -type f | head -1)
-          cp "$BPF" /usr/lib/hoard/hoard.bpf.o
+          cp dist/hoard.bpf.o /usr/lib/hoard/hoard.bpf.o
           hoard --version || true
           cat > /tmp/e2e.toml << 'TOML'
           [daemon]
