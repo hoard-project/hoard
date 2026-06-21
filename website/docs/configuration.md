@@ -30,15 +30,11 @@ prefix      = "hoard"
 ttl         = "7d"
 retries     = 3
 extensions  = ["*"]
-exclude     = []
+exclude     = ["*.tmp", "*.journal"]
 compression = "zstd"   # zstd level 3; S3 key gets .zst suffix
 encryption  = false    # (planned)
 on_stop     = "drain"
 on_delete   = "keep"
-
-[gc]
-interval_secs = 21600
-ttl_days      = 30
 
 [resilience]
 pending_db         = "/var/lib/hoard/pending.db"
@@ -46,19 +42,17 @@ max_upload_retries = 5
 dead_letter_dir    = "/var/lib/hoard/dead-letter"
 
 [nomad]
-addr       = "http://127.0.0.1:4646"
-token      = ""
-meta_enabled  = false
-meta_poll_secs = 30
+addr           = ""
+token          = ""
+meta_enabled   = false
+meta_poll_secs = 300
 
 [[storage_classes]]
 name = "long-term"
 ttl = "90d"
 retries = 5
-# zstd compression (level 3, .zst suffix on S3 key)
 compression = "zstd"
-# encryption is a planned feature
-# encryption = true
+# encryption = true  # (planned)
 
 [[storage_classes]]
 name = "short-term"
@@ -72,6 +66,7 @@ class = "long-term"
 s3_prefix = "databases/postgres"
 extensions = ["db", "wal"]
 on_stop = "drain"
+enabled = true
 
 [[volumes]]
 name = "app-logs"
@@ -82,15 +77,20 @@ s3_prefix = "logs/app"
 [[volumes]]
 name = "catch-all"
 match = "**"
-class = "short-term"
 s3_prefix = "misc"
 ```
+
+!!! warning "No `[gc]` section"
+    GC interval and TTL are set via environment variables
+    `HOARD_GC_INTERVAL` / `HOARD_GC_TTL_DAYS` or CLI flags
+    `--gc-interval` / `--gc-ttl-days`. There is no `[gc]` section
+    in the v2 TOML schema.
 
 ### Concepts
 
 | Concept | Analogous to | Purpose |
 |---------|-------------|---------|
-| **StorageClass** | K8s StorageClass | Reusable policy (TTL, retries) |
+| **StorageClass** | K8s StorageClass | Reusable policy (TTL, retries, compression) |
 | **Volume** | K8s PVC | Path glob → StorageClass + S3 prefix |
 | **defaults** | StorageClass fallback | Applied when no volume matches |
 
@@ -120,7 +120,7 @@ More specific globs win. Declaration order breaks ties.
 | `mode` | `"standalone"` \| `"nomad"` | `"standalone"` | Runtime mode |
 | `service` | string | `"default"` | Service name (socket path) |
 | `metrics_addr` | `host:port` | `0.0.0.0:9150` | Prometheus endpoint |
-| `control_socket` | path | `/run/hoard/default.sock` | Unix socket for hoardctl |
+| `control_socket` | path | `/var/run/hoard.sock` | Unix socket for hoardctl |
 
 ### `[watch]`
 
@@ -143,22 +143,25 @@ More specific globs win. Declaration order breaks ties.
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `prefix` | string | `""` | S3 key prefix for unmatched volumes |
+| `prefix` | string | `"default"` | S3 key prefix for unmatched volumes |
 | `ttl` | duration | `"30d"` | Retention before GC |
 | `retries` | u32 | `5` | Upload retry count |
-| `extensions` | `[string]` | — | Watch file extensions (e.g. `["db","wal"]`) |
-| `exclude` | `[string]` | — | Patterns to exclude |
+| `extensions` | `[string]` | `["*"]` | Watch file extensions (e.g. `["db","wal"]`) |
+| `exclude` | `[string]` | `["*.tmp", "*.journal"]` | Patterns to exclude |
 | `compression` | `"zstd"` \| none | none | zstd level 3; S3 key gets `.zst` |
 | `encryption` | bool | `false` | *(planned)* at-rest encryption |
 | `on_stop` | `"drain"` \| `"keep"` \| `"purge"` | `"drain"` | Action when volume is removed |
 | `on_delete` | `"keep"` \| `"purge"` | `"keep"` | Action when watched file is deleted |
 
-### `[gc]`
+### GC settings
 
-| Field | Type | Default |
-|-------|------|---------|
-| `interval_secs` | u64 | `21600` (6h) |
-| `ttl_days` | u64 | `30` |
+!!! note "Environment variables / CLI only"
+    GC is configured outside the TOML schema.
+
+| Env var | CLI flag | Default |
+|---------|----------|---------|
+| `HOARD_GC_INTERVAL` | `--gc-interval <SECS>` | `3600` (1h) |
+| `HOARD_GC_TTL_DAYS` | `--gc-ttl-days <DAYS>` | `30` |
 
 ### StorageClass
 
@@ -169,6 +172,8 @@ More specific globs win. Declaration order breaks ties.
 | `retries` | u32 | `5` | no |
 | `compression` | `"zstd"` \| none | none | zstd level 3 |
 | `encryption` | bool | `false` | *(planned)* |
+| `on_stop` | `"drain"` \| `"keep"` \| `"purge"` | inherit | no |
+| `on_delete` | `"keep"` \| `"purge"` | inherit | no |
 
 ### Volume
 
@@ -182,8 +187,11 @@ More specific globs win. Declaration order breaks ties.
 | `exclude` | `[string]` | no |
 | `ttl` | duration | no |
 | `retries` | u32 | no |
+| `compression` | `"zstd"` \| none | no |
+| `encryption` | bool | no — *(planned)* |
 | `on_stop` | `"drain"` \| `"keep"` \| `"purge"` | no |
 | `on_delete` | `"keep"` \| `"purge"` | no |
+| `enabled` | bool | `true` | Set `false` to disable |
 
 ### `[resilience]`
 
@@ -197,10 +205,10 @@ More specific globs win. Declaration order breaks ties.
 
 | Field | Type | Default |
 |-------|------|---------|
-| `addr` | URL | `http://127.0.0.1:4646` |
+| `addr` | URL | `""` |
 | `token` | string | `""` |
 | `meta_enabled` | bool | `false` |
-| `meta_poll_secs` | u64 | `30` |
+| `meta_poll_secs` | u64 | `300` |
 
 ## Config file discovery
 

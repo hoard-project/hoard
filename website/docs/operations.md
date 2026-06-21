@@ -34,6 +34,16 @@ Endpoint: `http://0.0.0.0:9150/metrics` (Prometheus OpenMetrics format)
 | `hoard_gc_errors_total` | Counter | GC errors |
 | `hoard_health_status` | Gauge | 1=ok, 0=degraded |
 
+### Health endpoint
+
+```bash
+curl http://127.0.0.1:9150/health
+# {"status":"ok","pending":0.0,"dead_letter":0.0}
+```
+
+Returns `"ok"` when healthy (BPF loaded, S3 reachable, dead-letter empty).
+Returns `"degraded"` when S3 unreachable or dead-letter files present.
+
 ### Alert rules
 
 ```yaml
@@ -73,14 +83,14 @@ groups:
 
 ## Garbage collection
 
-GC runs on a schedule (default every 6 hours). Removes S3 objects older
+GC runs on a schedule (default every hour). Removes S3 objects older
 than `ttl_days` (default 30).
 
 ```bash
 # Trigger via control socket (standalone mode)
-echo flush | nc -U /run/hoard/default.sock
+echo flush | nc -U /var/run/hoard.sock
 
-# Trigger via HTTP (nomad mode / metrics server)
+# Trigger via HTTP (metrics server)
 curl -X POST http://127.0.0.1:9150/flush
 ```
 

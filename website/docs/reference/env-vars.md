@@ -5,63 +5,63 @@
 
 ## Core
 
-| Variable | Type | Default | Maps to |
-|----------|------|---------|---------|
+| Variable | Type | Default | Maps to / notes |
+|----------|------|---------|-----------------|
 | `HOARD_CONFIG` | path | auto-discovery | `--config` |
 | `HOARD_MODE` | `standalone` \| `nomad` | `standalone` | `daemon.mode` |
 
 ## Watch
 
-| Variable | Type | Default | Maps to |
-|----------|------|---------|---------|
-| `HOARD_WATCH_PATH` | path | — | `watch.paths[0]` |
+| Variable | Type | Default | Maps to / notes |
+|----------|------|---------|-----------------|
+| `HOARD_WATCH_PATH` | path | `/var/lib/hoard/volumes` | `watch.paths[0]` |
 | `HOARD_WATCH_PATTERNS` | comma-separated | `*` | `defaults.extensions` |
-| `HOARD_WATCH_EXCLUDES` | comma-separated | — | `defaults.exclude` |
+| `HOARD_WATCH_EXCLUDES` | comma-separated | `*.tmp,*.journal` | `defaults.exclude` |
 
 ## S3
 
-| Variable | Type | Default | Maps to |
-|----------|------|---------|---------|
-| `HOARD_S3_ENDPOINT` | URL | — | `s3.endpoint` |
-| `HOARD_S3_BUCKET` | string | — | `s3.bucket` |
+| Variable | Type | Default | Maps to / notes |
+|----------|------|---------|-----------------|
+| `HOARD_S3_ENDPOINT` | URL | `http://localhost:9000` | `s3.endpoint` |
+| `HOARD_S3_BUCKET` | string | `backups` | `s3.bucket` |
 | `HOARD_S3_REGION` | string | `us-east-1` | `s3.region` |
-| `HOARD_S3_ACCESS_KEY` | string | — | `s3.access_key` |
-| `HOARD_S3_SECRET_KEY` | string | — | `s3.secret_key` |
+| `HOARD_S3_ACCESS_KEY` | string | `""` | `s3.access_key` |
+| `HOARD_S3_SECRET_KEY` | string | `""` | `s3.secret_key` |
 | `HOARD_S3_NO_SIGN` | `true` \| `false` | `false` | `s3.no_sign` |
-| `HOARD_S3_PREFIX` | string | — | `defaults.prefix` |
+| `HOARD_S3_PREFIX` | string | `"default"` | `defaults.prefix` |
 
 ## Daemon
 
-| Variable | Type | Default | Maps to |
-|----------|------|---------|---------|
+| Variable | Type | Default | Maps to / notes |
+|----------|------|---------|-----------------|
 | `HOARD_METRICS_ADDR` | socket addr | `0.0.0.0:9150` | `daemon.metrics_addr` |
-| `HOARD_GC_INTERVAL` | u64 | `21600` | `gc.interval_secs` |
-| `HOARD_GC_TTL_DAYS` | u64 | `30` | `gc.ttl_days` |
-| `HOARD_CONTROL_SOCKET` | path | `/run/hoard/default.sock` | `daemon.control_socket` |
-| `HOARD_SERVICE` | string | `default` | `daemon.service` |
-| `HOARD_TLS_MODE` | `plain` \| `tls` | `plain` | `daemon.tls_mode` |
+| `HOARD_GC_INTERVAL` | u64 | `3600` (1h) | `--gc-interval` — no TOML section |
+| `HOARD_GC_TTL_DAYS` | u32 | `30` | `--gc-ttl-days` — no TOML section |
+| `HOARD_CONTROL_SOCKET` | path | `/var/run/hoard.sock` | `daemon.control_socket` |
+| `HOARD_SERVICE` | string | `"default"` | `daemon.service` |
+| `HOARD_TLS_MODE` | `plain` \| `tls` | `plain` | `--tls-mode` |
 
 ## Resilience
 
-| Variable | Type | Default | Maps to |
-|----------|------|---------|---------|
+| Variable | Type | Default | Maps to / notes |
+|----------|------|---------|-----------------|
 | `HOARD_PENDING_DB` | path | `/var/lib/hoard/pending.db` | `resilience.pending_db` |
 | `HOARD_MAX_UPLOAD_RETRIES` | u32 | `5` | `resilience.max_upload_retries` |
 | `HOARD_DEAD_LETTER_DIR` | path | `/var/lib/hoard/dead-letter` | `resilience.dead_letter_dir` |
 
 ## Nomad
 
-| Variable | Type | Default | Maps to |
-|----------|------|---------|---------|
-| `HOARD_NOMAD_ADDR` | URL | `http://127.0.0.1:4646` | `nomad.addr` |
-| `HOARD_NOMAD_TOKEN` | string | — | `nomad.token` |
+| Variable | Type | Default | Maps to / notes |
+|----------|------|---------|-----------------|
+| `HOARD_NOMAD_ADDR` | URL | `""` | `nomad.addr` |
+| `HOARD_NOMAD_TOKEN` | string | `""` | `nomad.token` |
 | `HOARD_NOMAD_META_ENABLED` | `true` \| `false` | `false` | `nomad.meta_enabled` |
-| `HOARD_NOMAD_META_POLL_SECS` | u64 | `30` | `nomad.meta_poll_secs` |
+| `HOARD_NOMAD_META_POLL_SECS` | u64 | `300` | `nomad.meta_poll_secs` |
 
 ## Logging
 
-| Variable | Type | Default | Maps to |
-|----------|------|---------|---------|
+| Variable | Type | Default | Maps to / notes |
+|----------|------|---------|-----------------|
 | `RUST_LOG` | log level | `info` | Log verbosity |
 
 ## Examples
@@ -97,7 +97,7 @@ HOARD_WATCH_PATH=/opt/nomad/volumes \
 HOARD_NOMAD_ADDR=http://127.0.0.1:4646 \
 HOARD_NOMAD_TOKEN=54285c4f-... \
 HOARD_NOMAD_META_ENABLED=true \
-HOARD_NOMAD_META_POLL_SECS=15 \
+HOARD_NOMAD_META_POLL_SECS=300 \
 HOARD_S3_ENDPOINT=http://s3:9000 \
 HOARD_S3_BUCKET=backups \
 HOARD_S3_ACCESS_KEY=s3admin \
@@ -105,5 +105,5 @@ HOARD_S3_SECRET_KEY=s3admin123 \
   hoard
 
 # Debug mode
-RUST_LOG=debug hoard --check-bpf
+RUST_LOG=debug hoard
 ```
