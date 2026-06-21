@@ -111,11 +111,12 @@ mc cp /var/lib/hoard/dead-letter/bad-file.txt local/hoard-backups/hoard/
 
 ### Hoard not detecting file writes
 
-1. Check BPF program loads: `hoard --check-bpf`
-2. Verify kernel ≥ 5.5: `uname -r`
-3. Check BTF available: `ls /sys/kernel/btf/vmlinux`
-4. Increase log verbosity: `RUST_LOG=debug hoard`
-5. Verify watch path exists and is writable
+1. Verify BPF loaded: `curl -s http://127.0.0.1:9150/health | grep "ok"`
+2. If degraded, check logs for "BPF load" errors
+3. Verify kernel ≥ 5.5: `uname -r`
+4. Check BTF available: `ls /sys/kernel/btf/vmlinux`
+5. Increase log verbosity: `RUST_LOG=debug hoard`
+6. Verify watch path exists and is writable
 
 ### Upload failing
 
