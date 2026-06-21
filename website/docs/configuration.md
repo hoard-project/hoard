@@ -68,7 +68,7 @@ retries = 2
 [[volumes]]
 name = "postgres"
 match = "postgres/**"
-storage_class = "long-term"
+class = "long-term"
 s3_prefix = "databases/postgres"
 extensions = ["db", "wal"]
 on_stop = "drain"
@@ -76,13 +76,13 @@ on_stop = "drain"
 [[volumes]]
 name = "app-logs"
 match = "app-logs/**"
-storage_class = "short-term"
+class = "short-term"
 s3_prefix = "logs/app"
 
 [[volumes]]
 name = "catch-all"
 match = "**"
-storage_class = "short-term"
+class = "short-term"
 s3_prefix = "misc"
 ```
 
@@ -176,7 +176,7 @@ More specific globs win. Declaration order breaks ties.
 |-------|------|----------|
 | `name` | string | **yes** |
 | `match` | glob | **yes** |
-| `storage_class` | string | no |
+| `class` | string | no |
 | `s3_prefix` | string | no |
 | `extensions` | `[string]` | no |
 | `exclude` | `[string]` | no |
