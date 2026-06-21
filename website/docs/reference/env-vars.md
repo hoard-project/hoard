@@ -15,6 +15,7 @@
 | Variable | Type | Default | Maps to / notes |
 |----------|------|---------|-----------------|
 | `HOARD_WATCH_PATH` | path | `/var/lib/hoard/volumes` | `watch.paths[0]` |
+| `HOARD_WATCH_ROOT` | path | — | Root for Nomad volumes (overrides) |
 | `HOARD_WATCH_PATTERNS` | comma-separated | `*` | `defaults.extensions` |
 | `HOARD_WATCH_EXCLUDES` | comma-separated | `*.tmp,*.journal` | `defaults.exclude` |
 

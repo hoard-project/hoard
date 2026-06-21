@@ -5,7 +5,7 @@
 
 | Property | Value |
 |----------|-------|
-| Path | `/run/hoard/{service}.sock` (default: `/run/hoard/default.sock`) |
+| Path | `/var/run/hoard.sock` (set via `--control-socket` or `HOARD_CONTROL_SOCKET`) |
 | Protocol | Raw text, newline-delimited |
 | Encoding | UTF-8 |
 
@@ -56,17 +56,17 @@ status
 
 ```bash
 # Flush
-echo flush | nc -U /run/hoard/default.sock
+echo flush | nc -U /var/run/hoard.sock
 
 # Status
-echo status | nc -U /run/hoard/default.sock
+echo status | nc -U /var/run/hoard.sock
 
 # Or use hoardctl
 hoardctl flush default
 hoardctl status default
 ```
 
-## HTTP endpoints (Nomad mode / metrics server)
+## HTTP endpoints (metrics server)
 
 | Method | Path | Response |
 |--------|------|----------|
