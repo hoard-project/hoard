@@ -4,6 +4,7 @@ version = "1.0.2"
 edition = "2021"
 rust-version = "1.82"
 description = "eBPF + io_uring daemon for zero-copy file backup to S3 under Nomad orchestration. Auto-detects SQLite databases for WAL checkpoint; transparent pass-through for all other file types."
+license = "GPL-3.0-only"
 
 [dependencies]
 aya                    = "0.13"
