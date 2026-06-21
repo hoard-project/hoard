@@ -135,7 +135,7 @@ impl VerifiedS3Backend {
         .await
     }
 
-    /// Upload raw bytes to a pre-signed S3 PUT URL.
+    /// Upload raw bytes to S3 via presigned PUT URL with SigV4 signing.
     /// Used for compressed uploads where sendfile(2) isn't applicable.
     pub async fn put_bytes(&self, key: &str, data: &[u8]) -> Result<String> {
         let url = self.presign_put(key, Duration::from_secs(3600)).await?;
@@ -256,6 +256,7 @@ impl VerifiedS3Backend {
             &uri_path,
             query_string,
             &host,
+            "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
         );
 
         let url = format!(
@@ -270,7 +271,7 @@ impl VerifiedS3Backend {
             .delete(&url)
             .header("Authorization", &auth)
             .header("x-amz-date", &amz_date)
-            .header("x-amz-content-sha256", "UNSIGNED-PAYLOAD")
+            .header("x-amz-content-sha256", "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855")
             .send()
             .await
             .context("S3 DeleteObject failed")?;
@@ -308,6 +309,7 @@ impl VerifiedS3Backend {
             &uri_path,
             &query,
             &host,
+            "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
         );
 
         let url = format!(
@@ -321,7 +323,7 @@ impl VerifiedS3Backend {
             .get(&url)
             .header("Authorization", &auth)
             .header("x-amz-date", &amz_date)
-            .header("x-amz-content-sha256", "UNSIGNED-PAYLOAD")
+            .header("x-amz-content-sha256", "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855")
             .send()
             .await
             .context("S3 ListObjectsV2 failed")?;

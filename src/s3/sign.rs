@@ -1,5 +1,4 @@
-#![allow(dead_code)]
-//! AWS SigV4 signing for S3 presigned URLs.
+//! AWS SigV4 signing for S3 requests — presigned URLs and Authorization headers.
 //!
 //! Pure Rust implementation without external AWS SDK crates.
 //! Algorithm matches the standard SigV4 presigned URL spec:
@@ -46,6 +45,7 @@ pub async fn presign_get(
 }
 
 /// Generate a presigned DELETE URL using AWS SigV4.
+#[allow(dead_code)]
 pub async fn presign_delete(
     access_key: &str,
     secret_key: &str,
@@ -214,7 +214,11 @@ fn derive_signing_key(secret_key: &str, date_stamp: &str, region: &str, service:
 
 /// Generate a SigV4 Authorization header for a direct (non-presigned) request.
 ///
+/// `payload_hash` should be the hex-encoded SHA-256 of the request body,
+/// or `"UNSIGNED-PAYLOAD"` for streaming/presigned use.
+///
 /// Returns `(amz_date, authorization_header_value)`.
+#[allow(clippy::too_many_arguments)]
 pub fn sign_request_headers(
     access_key: &str,
     secret_key: &str,
@@ -223,6 +227,7 @@ pub fn sign_request_headers(
     uri_path: &str,
     query_string: &str,
     host: &str,
+    payload_hash: &str,
 ) -> (String, String) {
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -233,9 +238,6 @@ pub fn sign_request_headers(
 
     let credential = format!("{access_key}/{date_stamp}/{region}/s3/aws4_request");
     let credential_scope = format!("{date_stamp}/{region}/s3/aws4_request");
-
-    // Canonical request — use UNSIGNED-PAYLOAD for simplicity
-    let payload_hash = "UNSIGNED-PAYLOAD";
 
     let canonical_uri = if uri_path.is_empty() || uri_path.starts_with('/') {
         uri_path.to_string()
