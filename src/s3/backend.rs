@@ -271,7 +271,10 @@ impl VerifiedS3Backend {
             .delete(&url)
             .header("Authorization", &auth)
             .header("x-amz-date", &amz_date)
-            .header("x-amz-content-sha256", "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855")
+            .header(
+                "x-amz-content-sha256",
+                "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            )
             .send()
             .await
             .context("S3 DeleteObject failed")?;
@@ -323,7 +326,10 @@ impl VerifiedS3Backend {
             .get(&url)
             .header("Authorization", &auth)
             .header("x-amz-date", &amz_date)
-            .header("x-amz-content-sha256", "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855")
+            .header(
+                "x-amz-content-sha256",
+                "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            )
             .send()
             .await
             .context("S3 ListObjectsV2 failed")?;
