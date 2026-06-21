@@ -19,14 +19,14 @@ jobs:
     name: "fmt / clippy / test"
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@df4cb1cf17f246ab2dd04c67210db2d3e3ff53f7  # v6
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v6
 
       - name: Install system dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y libssl-dev libelf-dev clang llvm
 
-      - uses: dtolnay/rust-toolchain@29eef3381d2e327c7e04d0a92d25543c4b8d4bc8  # stable
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8  # stable
         with:
           components: rustfmt, clippy
 
@@ -55,10 +55,10 @@ jobs:
         include:
           - runner: ubuntu-22.04
             target: x86_64-unknown-linux-gnu
-          - runner: ubuntu-22.04-arm
+          - runner: ubuntu-24.04-arm
             target: aarch64-unknown-linux-gnu
     steps:
-      - uses: actions/checkout@df4cb1cf17f246ab2dd04c67210db2d3e3ff53f7  # v6
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v6
 
       - name: Install system dependencies
         run: |

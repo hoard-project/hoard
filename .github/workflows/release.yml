@@ -27,14 +27,14 @@ jobs:
             bpf_arch: arm64
             artifact_name: hoard-aarch64
     steps:
-      - uses: actions/checkout@df4cb1cf17f246ab2dd04c67210db2d3e3ff53f7  # v6
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v6
 
       - name: Install system dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y libssl-dev libelf-dev clang llvm
 
-      - uses: dtolnay/rust-toolchain@29eef3381d2e327c7e04d0a92d25543c4b8d4bc8  # stable
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8  # stable
 
       - name: Build release
         run: cargo build --release
@@ -57,14 +57,14 @@ jobs:
           ls -lh target/release/${{ matrix.artifact_name }}*
 
       - name: Generate SLSA provenance
-        uses: actions/attest-build-provenance@96b4a1e53b3ac7f2c692f07ed7eac2b7bdf6c1b5  # v2
+        uses: actions/attest-build-provenance@c074443f1aee8d4aeeae555aebba3282517141b2  # v2
         with:
           subject-path: |
             target/release/${{ matrix.artifact_name }}
             target/release/${{ matrix.artifact_name }}.bpf.o
 
       - name: Upload to release
-        uses: softprops/action-gh-release@3bb1273b40e2abc5fb1e6c83d77b47b60903dda2  # v2
+        uses: softprops/action-gh-release@c95fe1489396fe8a9eb87c0abf8aa5b2ef267fda  # v2
         with:
           files: |
             target/release/${{ matrix.artifact_name }}
