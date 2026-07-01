@@ -38,7 +38,7 @@ jobs:
         run: cargo build --release
 
       - name: Perform CodeQL analysis
-        uses: github/codeql-action/analyze@8ff85221d12737ec1137e6a892722e5130f32d05  # v3
+        uses: github/codeql-action/analyze@dd746615b3b9d728a6a37ca2045b68ca76d4841a  # v3
         with:
           category: "/language:rust,c-cpp"
 
